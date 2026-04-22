@@ -2,6 +2,10 @@ import classroom1 from "@/assets/classroom1.jpg";
 import classroom2 from "@/assets/classroom2.jpg";
 import classroom3 from "@/assets/classroom3.jpg";
 import classroom4 from "@/assets/classroom4.jpg";
+import classroomVideo1 from "@/assets/videos/classroom1.mp4";
+import classroomVideo2 from "@/assets/videos/classroom2.mp4";
+import classroomVideo3 from "@/assets/videos/classroom3.mp4";
+import classroomVideo4 from "@/assets/videos/classroom4.mp4";
 
 export interface CameraData {
   id: number;
@@ -15,9 +19,12 @@ export interface CameraData {
   building: string;
   supervisor: string;
   status: string;
+  statusType?: "live" | "ended";
   startTime: string;
   endTime: string;
   image: string;
+  video: string;
+  notes?: string;
 }
 
 export const cameras: CameraData[] = [
@@ -33,9 +40,12 @@ export const cameras: CameraData[] = [
     building: "Nhà A",
     supervisor: "Nguyễn Văn A",
     status: "Đang hoạt động",
+    statusType: "live",
     startTime: "24/05/2025 07:30",
     endTime: "24/05/2025 10:30",
     image: classroom1,
+    video: classroomVideo1,
+    notes: "Phòng thi khối A, camera chính hướng về toàn bộ lớp.",
   },
   {
     id: 2,
@@ -49,9 +59,12 @@ export const cameras: CameraData[] = [
     building: "Nhà A",
     supervisor: "Trần Thị B",
     status: "Đang hoạt động",
+    statusType: "live",
     startTime: "24/05/2025 07:30",
     endTime: "24/05/2025 10:30",
     image: classroom2,
+    video: classroomVideo2,
+    notes: "Phòng thi có giám thị phụ trách theo dõi khu vực giữa lớp.",
   },
   {
     id: 3,
@@ -65,9 +78,12 @@ export const cameras: CameraData[] = [
     building: "Nhà A",
     supervisor: "Lê Văn C",
     status: "Đang hoạt động",
+    statusType: "live",
     startTime: "24/05/2025 07:30",
     endTime: "24/05/2025 10:30",
     image: classroom3,
+    video: classroomVideo3,
+    notes: "Camera phục vụ theo dõi dãy bàn phía cửa sổ.",
   },
   {
     id: 4,
@@ -81,8 +97,11 @@ export const cameras: CameraData[] = [
     building: "Nhà B",
     supervisor: "Phạm Thị D",
     status: "Đang hoạt động",
+    statusType: "live",
     startTime: "24/05/2025 07:30",
     endTime: "24/05/2025 10:30",
     image: classroom4,
+    video: classroomVideo4,
+    notes: "Phòng thi khu B, ưu tiên giám sát bàn đầu và cuối lớp.",
   },
 ];

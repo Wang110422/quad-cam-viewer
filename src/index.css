@@ -70,4 +70,14 @@
     @apply bg-background text-foreground;
     font-family: 'Inter', system-ui, sans-serif;
   }
+
+  input[type="file"]::file-selector-button {
+    background: hsl(var(--secondary));
+    color: hsl(var(--secondary-foreground));
+    border: 0;
+    border-radius: calc(var(--radius) - 0.25rem);
+    padding: 0.375rem 0.75rem;
+    margin-right: 0.75rem;
+    cursor: pointer;
+  }
 }

@@ -136,7 +136,8 @@ const Index = () => {
       ["Ghi chú", camera.notes ?? ""],
     ];
 
-    const csv = rows.map(([label, value]) => `"${label.replaceAll('"', '""')}","${value.replaceAll('"', '""')}"`).join("\n");
+    const escapeCsv = (text: string) => text.replace(/"/g, '""');
+    const csv = rows.map(([label, value]) => `"${escapeCsv(label)}","${escapeCsv(value)}"`).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");

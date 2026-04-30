@@ -98,13 +98,16 @@ const CameraTile = ({
 
     if (isLoading) return;
 
-    // Replay: về 0 + play
+    // Master chỉ nhận lệnh replay/changeVideo từ nút ngoài; play/pause/seek còn lại do chính controls xử lý.
     if (syncState.replayTick !== lastReplayTick.current) {
       lastReplayTick.current = syncState.replayTick;
       ignoreNextEvent.current = true;
       v.currentTime = 0;
       v.play().catch(() => {});
     }
+    if (isMaster) return;
+
+    // Slave mirror đầy đủ play/pause/seek/ended từ master.
     // Seek
     if (syncState.seekTick !== lastSeekTick.current) {
       lastSeekTick.current = syncState.seekTick;

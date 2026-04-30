@@ -42,7 +42,7 @@ const CameraGrid = ({ cameras, selectedId, onSelect }: CameraGridProps) => {
             <div className="flex items-center gap-2">
               <span
                 className={`w-2 h-2 rounded-full ${
-                  cam.statusType === "ended" ? "bg-warning" : "bg-success animate-pulse"
+                  isEnded ? "bg-warning" : "bg-success animate-pulse"
                 }`}
               />
               <span className="text-sm font-medium text-white">{cam.name}</span>

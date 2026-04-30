@@ -212,7 +212,7 @@ const CameraDetail = ({
               <StatCard icon={Users} label="Tổng số học sinh" value={camera.students} color="primary" />
               <StatCard icon={CheckCircle} label="Có mặt" value={camera.present} color="success" />
               <StatCard icon={UserX} label="Vắng mặt" value={camera.absent} color="warning" />
-              <StatCard icon={Flag} label="Sự kiện" value={isEnded || hasEndedOnce ? 1 : 0} color="destructive" />
+              <StatCard icon={Flag} label="Sự kiện" value={showEnded ? 1 : 0} color="destructive" />
             </div>
           </div>
 
@@ -235,7 +235,7 @@ const CameraDetail = ({
             <div className="mb-2 flex items-center gap-2 text-foreground font-medium">
               <AlertTriangle className="h-4 w-4 text-warning" /> Trạng thái giám sát
             </div>
-            {isEnded || hasEndedOnce
+            {showEnded
               ? "Video camera đã phát hết, hệ thống đánh dấu phòng thi này là đã kết thúc."
               : "Camera đang phát video giám sát. Khi video kết thúc, phòng thi sẽ tự động chuyển trạng thái hoàn tất."}
           </div>

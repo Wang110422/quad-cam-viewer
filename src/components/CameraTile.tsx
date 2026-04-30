@@ -159,7 +159,7 @@ const CameraTile = ({
       ignoreNextEvent.current = true;
       v.play().catch(() => {});
     }
-  }, [syncState?.heartbeatTick, isMaster, isLoading]);
+  }, [syncState, isMaster, isLoading]);
 
   // ====== MASTER: phát heartbeat định kỳ ======
   useEffect(() => {
@@ -204,7 +204,7 @@ const CameraTile = ({
     const labelHeight = isMaster ? 20 : 14;
     const dotRadius = isMaster ? 3 : 2;
 
-    results.forEach((item: any) => {
+    results.forEach((item) => {
       const [x1, y1, x2, y2] = item.box;
       const isNormal = String(item.action || "").includes("NORMAL");
       const color = isNormal ? "#22c55e" : "#ef4444";
@@ -246,14 +246,15 @@ const CameraTile = ({
     });
   };
 
-  const Wrapper: any = onClick ? "button" : "div";
   const videoSrc = syncState?.videoSrc ?? camera.video;
   const showEndedOverlaySmall = !isMaster && syncState?.isEnded;
+  const wrapperProps = onClick
+    ? ({ type: "button" as const, onClick } as const)
+    : ({} as const);
 
   return (
-    <Wrapper
-      type={onClick ? "button" : undefined}
-      onClick={onClick}
+    <button
+      {...wrapperProps}
       className={`relative block w-full bg-black overflow-hidden ${className}`}
     >
       {/* Loading 5s overlay */}
@@ -349,13 +350,8 @@ const CameraTile = ({
           {syncState?.isEnded ? "ENDED" : "LIVE"}
         </div>
       )}
-    </Wrapper>
+    </button>
   );
 };
 
 export default CameraTile;
-
-export const useCameraCommands = () => {
-  const { emitReplay, changeVideo } = useCameraSync();
-  return { emitReplay, changeVideo };
-};

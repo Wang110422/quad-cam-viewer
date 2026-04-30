@@ -24,7 +24,7 @@ export interface CameraSyncState {
 
 interface CameraSyncContextValue {
   getState: (id: number) => CameraSyncState | undefined;
-  ensureCamera: (id: number, defaultVideoSrc: string) => void;
+  ensureCamera: (id: number, defaultVideoSrc: string, initialEnded?: boolean) => void;
   version: number;
   changeVideo: (id: number, newSrc: string) => void;
   emitPlay: (id: number) => void;
@@ -42,7 +42,7 @@ export const CameraSyncProvider = ({ children }: { children: ReactNode }) => {
   const [version, setVersion] = useState(0);
   const bump = useCallback(() => setVersion((v) => v + 1), []);
 
-  const ensureCamera = useCallback((id: number, defaultVideoSrc: string) => {
+  const ensureCamera = useCallback((id: number, defaultVideoSrc: string, initialEnded = false) => {
     if (!statesRef.current.has(id)) {
       statesRef.current.set(id, {
         videoSrc: defaultVideoSrc,
@@ -55,11 +55,10 @@ export const CameraSyncProvider = ({ children }: { children: ReactNode }) => {
         endedTick: 0,
         currentTime: 0,
         heartbeatTick: 0,
-        isEnded: false,
+        isEnded: initialEnded,
       });
-      bump();
     }
-  }, [bump]);
+  }, []);
 
   const getState = useCallback((id: number) => statesRef.current.get(id), []);
 
@@ -107,7 +106,7 @@ export const CameraSyncProvider = ({ children }: { children: ReactNode }) => {
   const emitReplay = useCallback((id: number) => {
     const cur = statesRef.current.get(id);
     if (!cur) return;
-    update(id, { replayTick: cur.replayTick + 1, isEnded: false, currentTime: 0 });
+    update(id, { replayTick: cur.replayTick + 1, isEnded: false, currentTime: 0, loadingUntil: 0 });
   }, [update]);
 
   const emitSeek = useCallback((id: number, time: number) => {

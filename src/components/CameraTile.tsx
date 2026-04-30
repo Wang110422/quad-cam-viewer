@@ -248,13 +248,17 @@ const CameraTile = ({
 
   const videoSrc = syncState?.videoSrc ?? camera.video;
   const showEndedOverlaySmall = !isMaster && syncState?.isEnded;
-  const wrapperProps = onClick
-    ? ({ type: "button" as const, onClick } as const)
-    : ({} as const);
 
   return (
-    <button
-      {...wrapperProps}
+    <div
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={(event) => {
+        if (!onClick || (event.key !== "Enter" && event.key !== " ")) return;
+        event.preventDefault();
+        onClick();
+      }}
       className={`relative block w-full bg-black overflow-hidden ${className}`}
     >
       {/* Loading 5s overlay */}
@@ -350,7 +354,7 @@ const CameraTile = ({
           {syncState?.isEnded ? "ENDED" : "LIVE"}
         </div>
       )}
-    </button>
+    </div>
   );
 };
 

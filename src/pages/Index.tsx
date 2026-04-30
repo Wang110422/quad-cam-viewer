@@ -7,6 +7,7 @@ import RoomFormDialog, { type RoomFormValues } from "@/components/RoomFormDialog
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { Calendar, Clock, Bell, Plus } from "lucide-react";
+import { CameraSyncProvider } from "@/contexts/CameraSyncContext";
 
 const formatDateTime = (value: string) => {
   if (!value) return "";
@@ -152,6 +153,7 @@ const Index = () => {
   };
 
   return (
+    <CameraSyncProvider>
     <div className="flex h-screen overflow-hidden">
       <AppSidebar />
       <main className="flex-1 flex flex-col overflow-hidden">
@@ -243,6 +245,7 @@ const Index = () => {
         } : undefined}
       />
     </div>
+    </CameraSyncProvider>
   );
 };
 

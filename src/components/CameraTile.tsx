@@ -3,16 +3,15 @@ import { CameraData } from "@/data/cameras";
 import { socketService } from "@/services/socketServices";
 import SKELETON_CONNECTIONS from "@/const/skeleton_collections";
 import { Clock3 } from "lucide-react";
+import { useCameraSync } from "@/contexts/CameraSyncContext";
 
 interface CameraTileProps {
   camera: CameraData;
-  /** small = ô grid; large = chế độ detail */
+  /** small = ô grid (slave); large = chế độ detail (master). */
   size?: "small" | "large";
-  /** Có hiển thị thanh điều khiển video gốc không (chỉ dành cho large). */
+  /** Hiển thị thanh điều khiển video gốc. Chỉ master mới nên bật. */
   showControls?: boolean;
-  /** Tự động phát khi xong loading. */
-  autoPlayAfterLoading?: boolean;
-  /** Callback khi video phát hết. */
+  /** Callback khi master phát hết video. */
   onEnded?: (id: number) => void;
   /** Khi click vào tile (dùng cho grid). */
   onClick?: () => void;
@@ -22,25 +21,30 @@ interface CameraTileProps {
 /**
  * Component hiển thị 1 luồng camera kèm overlay AI (bounding box + skeleton).
  *
- * Mỗi instance HOÀN TOÀN ĐỘC LẬP:
- *  - Có loading 5s riêng
- *  - Có buffer kết quả AI riêng
- *  - Có canvas overlay + vòng lặp vẽ riêng
- *  - Có video element riêng
+ * - Master (size="large", trong CameraDetail): điều khiển video, phát các lệnh
+ *   play / pause / replay / seek qua CameraSyncContext.
+ * - Slave (size="small", trong CameraGrid): video element bị "khoá" – không
+ *   nhận tương tác trực tiếp, chỉ mirror theo lệnh của master cùng cameraId.
  *
- * Nhờ vậy, hiệu ứng skeleton / loading của camera này KHÔNG ảnh hưởng
- * tới camera khác – kể cả khi cùng nghe chung 1 socket.
+ * Mỗi instance tự quản lý buffer AI + canvas overlay riêng.
  */
 const CameraTile = ({
   camera,
   size = "small",
   showControls = false,
-  autoPlayAfterLoading = true,
   onEnded,
   onClick,
   className = "",
 }: CameraTileProps) => {
   const isEnded = camera.statusType === "ended";
+  const isMaster = size === "large";
+
+  const { getState, ensureCamera, version, emitPlay, emitPause, emitReplay, emitSeek } =
+    useCameraSync();
+
+  // Khởi tạo state cho camera này nếu chưa có.
+  ensureCamera(camera.id, camera.video);
+  const syncState = getState(camera.id);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -48,22 +52,31 @@ const CameraTile = ({
   const isLooping = useRef(false);
   const aiResultsBuffer = useRef<Map<number, any[]>>(new Map());
 
-  const [isInitialLoading, setIsInitialLoading] = useState(!isEnded);
+  // Để slave không re-emit lại lệnh từ master gây vòng lặp
+  const ignoreNextEvent = useRef(false);
+
+  // Tracker tick đã xử lý, để slave biết khi nào có lệnh mới
+  const lastPlayTick = useRef(syncState?.playTick ?? 0);
+  const lastPauseTick = useRef(syncState?.pauseTick ?? 0);
+  const lastReplayTick = useRef(syncState?.replayTick ?? 0);
+  const lastSeekTick = useRef(syncState?.seekTick ?? 0);
+
   const [hasEndedOnce, setHasEndedOnce] = useState(false);
 
-  // Reset toàn bộ state/ref khi camera đổi (key ở cha cũng remount,
-  // nhưng giữ guard này để chắc chắn).
+  // Đếm ngược loading overlay theo loadingUntil
+  const [now, setNow] = useState(Date.now());
+  const isLoading =
+    !!syncState && syncState.loadingUntil > 0 && syncState.loadingUntil > now;
+
   useEffect(() => {
-    if (isEnded) {
-      setIsInitialLoading(false);
-      return;
-    }
+    if (!syncState || syncState.loadingUntil <= 0) return;
+    const interval = setInterval(() => setNow(Date.now()), 200);
+    return () => clearInterval(interval);
+  }, [syncState?.loadingUntil]);
 
-    aiResultsBuffer.current = new Map();
-    isLooping.current = false;
-    setIsInitialLoading(true);
-    setHasEndedOnce(false);
-
+  // ====== Socket: kết nối + lắng nghe data_box ======
+  useEffect(() => {
+    if (isEnded) return;
     const socket = socketService.connect();
 
     const handleDataBox = (data: { timestamp: string | number; results: any[] }) => {
@@ -73,25 +86,50 @@ const CameraTile = ({
 
     socket.on("data_box", handleDataBox);
 
-    // Đợi 5s cho AI khởi động
-    const startTimer = setTimeout(() => {
-      setIsInitialLoading(false);
-      if (autoPlayAfterLoading) {
-        setTimeout(() => {
-          videoRef.current?.play().catch(() => {});
-        }, 100);
-      }
-    }, 5000);
-
     return () => {
-      clearTimeout(startTimer);
       socket.off("data_box", handleDataBox);
       socketService.release();
       isLooping.current = false;
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [camera.id, isEnded]);
+  }, [isEnded, camera.id]);
+
+  // ====== Reset buffer khi videoSrc đổi ======
+  useEffect(() => {
+    aiResultsBuffer.current = new Map();
+  }, [syncState?.videoSrc]);
+
+  // ====== SLAVE: lắng nghe lệnh từ master và mirror ======
+  useEffect(() => {
+    if (isMaster || !syncState) return;
+    const v = videoRef.current;
+    if (!v) return;
+
+    if (syncState.replayTick !== lastReplayTick.current) {
+      lastReplayTick.current = syncState.replayTick;
+      ignoreNextEvent.current = true;
+      v.currentTime = 0;
+      v.play().catch(() => {});
+    }
+    if (syncState.seekTick !== lastSeekTick.current) {
+      lastSeekTick.current = syncState.seekTick;
+      ignoreNextEvent.current = true;
+      // Chỉ điều chỉnh nếu lệch quá 0.3s để tránh giật
+      if (Math.abs(v.currentTime - syncState.seekTime) > 0.3) {
+        v.currentTime = syncState.seekTime;
+      }
+    }
+    if (syncState.pauseTick !== lastPauseTick.current) {
+      lastPauseTick.current = syncState.pauseTick;
+      ignoreNextEvent.current = true;
+      v.pause();
+    }
+    if (syncState.playTick !== lastPlayTick.current) {
+      lastPlayTick.current = syncState.playTick;
+      ignoreNextEvent.current = true;
+      v.play().catch(() => {});
+    }
+  }, [version, isMaster, syncState]);
 
   const drawLoop = () => {
     if (!isLooping.current) return;
@@ -114,28 +152,24 @@ const CameraTile = ({
     const results = aiResultsBuffer.current.get(currentTime);
     if (!results || !Array.isArray(results)) return;
 
-    // AI giả định chạy trên frame 1920x1080
     const scaleX = canvas.width / 1920;
     const scaleY = canvas.height / 1080;
 
-    // Đường nét nhỏ hơn cho ô grid để không che hết ảnh
-    const boxLineWidth = size === "small" ? 1.5 : 2;
-    const skeletonLineWidth = size === "small" ? 1.5 : 2;
-    const fontSize = size === "small" ? 11 : 16;
-    const labelHeight = size === "small" ? 14 : 20;
-    const dotRadius = size === "small" ? 2 : 3;
+    const boxLineWidth = isMaster ? 2 : 1.5;
+    const skeletonLineWidth = isMaster ? 2 : 1.5;
+    const fontSize = isMaster ? 16 : 11;
+    const labelHeight = isMaster ? 20 : 14;
+    const dotRadius = isMaster ? 3 : 2;
 
     results.forEach((item: any) => {
       const [x1, y1, x2, y2] = item.box;
       const isNormal = String(item.action || "").includes("NORMAL");
       const color = isNormal ? "#22c55e" : "#ef4444";
 
-      // Bounding box
       ctx.strokeStyle = color;
       ctx.lineWidth = boxLineWidth;
       ctx.strokeRect(x1 * scaleX, y1 * scaleY, (x2 - x1) * scaleX, (y2 - y1) * scaleY);
 
-      // Label
       const label = `ID ${item.id}: ${item.action}`;
       ctx.font = `${fontSize}px Arial`;
       const textWidth = ctx.measureText(label).width;
@@ -144,7 +178,6 @@ const CameraTile = ({
       ctx.fillStyle = "white";
       ctx.fillText(label, x1 * scaleX + 4, y1 * scaleY - 6);
 
-      // Skeleton
       if (item.keypoints && item.conf) {
         ctx.lineWidth = skeletonLineWidth;
         ctx.strokeStyle = color;
@@ -173,7 +206,7 @@ const CameraTile = ({
   };
 
   // ====== UI cho phòng đã kết thúc (chỉ ở size small) ======
-  if (isEnded && size === "small") {
+  if (isEnded && !isMaster) {
     return (
       <div
         onClick={onClick}
@@ -193,6 +226,7 @@ const CameraTile = ({
   }
 
   const Wrapper: any = onClick ? "button" : "div";
+  const videoSrc = syncState?.videoSrc ?? camera.video;
 
   return (
     <Wrapper
@@ -200,17 +234,17 @@ const CameraTile = ({
       onClick={onClick}
       className={`relative block w-full bg-black overflow-hidden ${className}`}
     >
-      {/* Loading overlay (chỉ camera này) */}
-      {isInitialLoading && (
+      {/* Loading overlay (5s) – cả master & slave cùng id đều thấy */}
+      {isLoading && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/80 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-2 text-foreground">
             <div
               className={`animate-spin rounded-full border-primary border-t-transparent ${
-                size === "small" ? "h-6 w-6 border-2" : "h-10 w-10 border-4"
+                isMaster ? "h-10 w-10 border-4" : "h-6 w-6 border-2"
               }`}
             />
-            <span className={`font-medium ${size === "small" ? "text-xs" : "text-sm"}`}>
-              {size === "small" ? "Đang khởi tạo AI..." : "Đang khởi tạo AI Model (5s)..."}
+            <span className={`font-medium ${isMaster ? "text-sm" : "text-xs"}`}>
+              {isMaster ? "Đang khởi tạo AI Model (5s)..." : "Đang khởi tạo AI..."}
             </span>
           </div>
         </div>
@@ -219,23 +253,40 @@ const CameraTile = ({
       <div className="relative w-full aspect-video">
         <video
           ref={videoRef}
-          src={camera.video}
+          src={videoSrc}
           poster={camera.image}
           className="absolute inset-0 w-full h-full object-cover"
           muted
           playsInline
-          controls={showControls}
+          autoPlay={!isLoading}
+          loop={!isMaster /* slave loop âm thầm khi không có lệnh */}
+          controls={showControls && isMaster}
           onPlay={() => {
             isLooping.current = true;
             drawLoop();
+            if (isMaster && !ignoreNextEvent.current) emitPlay(camera.id);
+            ignoreNextEvent.current = false;
           }}
           onPause={() => {
             isLooping.current = false;
+            if (isMaster && !ignoreNextEvent.current) {
+              const v = videoRef.current;
+              // Bỏ qua sự kiện pause do video kết thúc
+              if (v && !v.ended) emitPause(camera.id);
+            }
+            ignoreNextEvent.current = false;
+          }}
+          onSeeked={() => {
+            const v = videoRef.current;
+            if (isMaster && v && !ignoreNextEvent.current) {
+              emitSeek(camera.id, v.currentTime);
+            }
+            ignoreNextEvent.current = false;
           }}
           onEnded={() => {
             setHasEndedOnce(true);
             isLooping.current = false;
-            onEnded?.(camera.id);
+            if (isMaster) onEnded?.(camera.id);
           }}
         />
         <canvas
@@ -244,8 +295,7 @@ const CameraTile = ({
         />
       </div>
 
-      {/* Trạng thái Live/Ended ở góc */}
-      {size === "small" && (
+      {!isMaster && (
         <div className="pointer-events-none absolute top-2 left-2 z-20 flex items-center gap-1.5 rounded-full bg-background/80 px-2 py-0.5 text-xs font-medium text-foreground backdrop-blur-sm">
           <span
             className={`h-1.5 w-1.5 rounded-full ${
@@ -260,3 +310,9 @@ const CameraTile = ({
 };
 
 export default CameraTile;
+
+// Helper riêng dành cho CameraDetail để gọi lệnh replay
+export const useCameraCommands = () => {
+  const { emitReplay, changeVideo } = useCameraSync();
+  return { emitReplay, changeVideo };
+};

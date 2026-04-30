@@ -282,6 +282,13 @@ const CameraTile = ({
           // Cả 2 đều KHÔNG loop – để onEnded chạy đúng và đồng bộ ended
           loop={false}
           controls={showControls && isMaster}
+          onLoadedMetadata={() => {
+            const v = videoRef.current;
+            if (!v || isLoading) return;
+            if (!isMaster && syncState) {
+              v.currentTime = syncState.isEnded ? Math.max(0, v.duration - 0.05) : syncState.currentTime;
+            }
+          }}
           onPlay={() => {
             isLooping.current = true;
             drawLoop();

@@ -20,11 +20,13 @@ export interface CameraSyncState {
   heartbeatTick: number;
   /** Đang ở trạng thái ended (sau khi video phát hết). */
   isEnded: boolean;
+  /** Master đang phát — slave dùng để tự play lại nếu bị miss lệnh. */
+  isPlaying: boolean;
 }
 
 interface CameraSyncContextValue {
   getState: (id: number) => CameraSyncState | undefined;
-  ensureCamera: (id: number, defaultVideoSrc: string) => void;
+  ensureCamera: (id: number, defaultVideoSrc: string, initialEnded?: boolean) => void;
   version: number;
   changeVideo: (id: number, newSrc: string) => void;
   emitPlay: (id: number) => void;
@@ -42,7 +44,7 @@ export const CameraSyncProvider = ({ children }: { children: ReactNode }) => {
   const [version, setVersion] = useState(0);
   const bump = useCallback(() => setVersion((v) => v + 1), []);
 
-  const ensureCamera = useCallback((id: number, defaultVideoSrc: string) => {
+  const ensureCamera = useCallback((id: number, defaultVideoSrc: string, initialEnded = false) => {
     if (!statesRef.current.has(id)) {
       statesRef.current.set(id, {
         videoSrc: defaultVideoSrc,
@@ -55,11 +57,11 @@ export const CameraSyncProvider = ({ children }: { children: ReactNode }) => {
         endedTick: 0,
         currentTime: 0,
         heartbeatTick: 0,
-        isEnded: false,
+        isEnded: initialEnded,
+        isPlaying: false,
       });
-      bump();
     }
-  }, [bump]);
+  }, []);
 
   const getState = useCallback((id: number) => statesRef.current.get(id), []);
 
@@ -78,6 +80,7 @@ export const CameraSyncProvider = ({ children }: { children: ReactNode }) => {
       loadingUntil: Date.now() + 5000,
       pauseTick: cur.pauseTick + 1,
       isEnded: false,
+      isPlaying: false,
       currentTime: 0,
     });
     setTimeout(() => {
@@ -87,6 +90,7 @@ export const CameraSyncProvider = ({ children }: { children: ReactNode }) => {
         ...s,
         loadingUntil: 0,
         replayTick: s.replayTick + 1, // cả master & slave reset về 0 + play
+        isPlaying: true,
       });
       bump();
     }, 5000);
@@ -95,19 +99,19 @@ export const CameraSyncProvider = ({ children }: { children: ReactNode }) => {
   const emitPlay = useCallback((id: number) => {
     const cur = statesRef.current.get(id);
     if (!cur) return;
-    update(id, { playTick: cur.playTick + 1, isEnded: false });
+    update(id, { playTick: cur.playTick + 1, isEnded: false, isPlaying: true });
   }, [update]);
 
   const emitPause = useCallback((id: number) => {
     const cur = statesRef.current.get(id);
     if (!cur) return;
-    update(id, { pauseTick: cur.pauseTick + 1 });
+    update(id, { pauseTick: cur.pauseTick + 1, isPlaying: false });
   }, [update]);
 
   const emitReplay = useCallback((id: number) => {
     const cur = statesRef.current.get(id);
     if (!cur) return;
-    update(id, { replayTick: cur.replayTick + 1, isEnded: false, currentTime: 0 });
+    update(id, { replayTick: cur.replayTick + 1, isEnded: false, isPlaying: true, currentTime: 0, loadingUntil: 0 });
   }, [update]);
 
   const emitSeek = useCallback((id: number, time: number) => {
@@ -119,16 +123,16 @@ export const CameraSyncProvider = ({ children }: { children: ReactNode }) => {
   const emitEnded = useCallback((id: number) => {
     const cur = statesRef.current.get(id);
     if (!cur) return;
-    update(id, { endedTick: cur.endedTick + 1, isEnded: true });
+    update(id, { endedTick: cur.endedTick + 1, isEnded: true, isPlaying: false });
   }, [update]);
 
-  // Heartbeat: cập nhật currentTime nhưng KHÔNG bump version để tránh re-render quá nhiều.
-  // Slave sẽ tự đọc state qua getState trong rAF.
+  // Heartbeat: bump version để slave bám currentTime thật của master.
   const emitHeartbeat = useCallback((id: number, time: number) => {
     const cur = statesRef.current.get(id);
     if (!cur) return;
     statesRef.current.set(id, { ...cur, currentTime: time, heartbeatTick: cur.heartbeatTick + 1 });
-  }, []);
+    bump();
+  }, [bump]);
 
   const value: CameraSyncContextValue = {
     getState,

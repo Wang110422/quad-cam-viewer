@@ -14,6 +14,14 @@ interface CameraTileProps {
   className?: string;
 }
 
+type AiResult = {
+  id: string | number;
+  action?: string;
+  box: [number, number, number, number];
+  keypoints?: number[][];
+  conf?: number[];
+};
+
 const CameraTile = ({
   camera,
   size = "small",
@@ -25,25 +33,16 @@ const CameraTile = ({
   const initiallyEnded = camera.statusType === "ended";
   const isMaster = size === "large";
 
-  const {
-    getState,
-    ensureCamera,
-    version,
-    emitPlay,
-    emitPause,
-    emitSeek,
-    emitEnded,
-    emitHeartbeat,
-  } = useCameraSync();
+  const { getState, ensureCamera, version, emitPlay, emitPause, emitSeek, emitEnded, emitHeartbeat } = useCameraSync();
 
-  ensureCamera(camera.id, camera.video);
+  ensureCamera(camera.id, camera.video, initiallyEnded);
   const syncState = getState(camera.id);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const requestRef = useRef<number | null>(null);
   const isLooping = useRef(false);
-  const aiResultsBuffer = useRef<Map<number, any[]>>(new Map());
+  const aiResultsBuffer = useRef<Map<number, AiResult[]>>(new Map());
 
   const ignoreNextEvent = useRef(false);
 
@@ -58,14 +57,14 @@ const CameraTile = ({
 
   // Đếm ngược loading overlay
   const [now, setNow] = useState(Date.now());
-  const isLoading =
-    !!syncState && syncState.loadingUntil > 0 && syncState.loadingUntil > now;
+  const loadingUntil = syncState?.loadingUntil ?? 0;
+  const isLoading = loadingUntil > 0 && loadingUntil > now;
 
   useEffect(() => {
-    if (!syncState || syncState.loadingUntil <= 0) return;
+    if (loadingUntil <= 0) return;
     const interval = setInterval(() => setNow(Date.now()), 200);
     return () => clearInterval(interval);
-  }, [syncState?.loadingUntil]);
+  }, [loadingUntil]);
 
   // Pause video trong khi loading
   useEffect(() => {
@@ -81,7 +80,7 @@ const CameraTile = ({
   useEffect(() => {
     if (initiallyEnded) return;
     const socket = socketService.connect();
-    const handleDataBox = (data: { timestamp: string | number; results: any[] }) => {
+    const handleDataBox = (data: { timestamp: string | number; results: AiResult[] }) => {
       const ts = Number(parseFloat(String(data.timestamp)).toFixed(1));
       aiResultsBuffer.current.set(ts, data.results);
     };
@@ -99,19 +98,24 @@ const CameraTile = ({
     aiResultsBuffer.current = new Map();
   }, [syncState?.videoSrc]);
 
-  // ====== SLAVE: lắng nghe lệnh từ master ======
+  // ====== MASTER/SLAVE: lắng nghe lệnh chung từ context ======
   useEffect(() => {
-    if (isMaster || !syncState) return;
+    if (!syncState) return;
     const v = videoRef.current;
     if (!v) return;
 
-    // Replay: về 0 + play
+    if (isLoading) return;
+
+    // Master chỉ nhận lệnh replay/changeVideo từ nút ngoài; play/pause/seek còn lại do chính controls xử lý.
     if (syncState.replayTick !== lastReplayTick.current) {
       lastReplayTick.current = syncState.replayTick;
       ignoreNextEvent.current = true;
       v.currentTime = 0;
       v.play().catch(() => {});
     }
+    if (isMaster) return;
+
+    // Slave mirror đầy đủ play/pause/seek/ended từ master.
     // Seek
     if (syncState.seekTick !== lastSeekTick.current) {
       lastSeekTick.current = syncState.seekTick;
@@ -132,13 +136,13 @@ const CameraTile = ({
       ignoreNextEvent.current = true;
       v.play().catch(() => {});
     }
-    // Ended: master ended → slave dừng tại frame cuối
-    if (syncState.endedTick !== lastEndedTick.current) {
+    // Ended: slave dừng tại frame cuối, master bỏ qua vì chính nó phát event ended
+    if (!isMaster && syncState.endedTick !== lastEndedTick.current) {
       lastEndedTick.current = syncState.endedTick;
       ignoreNextEvent.current = true;
       v.pause();
     }
-  }, [version, isMaster, syncState]);
+  }, [version, isMaster, syncState, isLoading]);
 
   // ====== SLAVE: heartbeat sync currentTime để tránh drift ======
   useEffect(() => {
@@ -146,12 +150,16 @@ const CameraTile = ({
     const v = videoRef.current;
     if (!v) return;
     const target = syncState.currentTime;
-    // Chỉ sync khi drift > 0.5s và đang play (tránh giật khi đang pause)
-    if (!v.paused && Math.abs(v.currentTime - target) > 0.5) {
+    // Sync nếu lệch thời gian; nếu master đang phát mà slave bị pause thì play lại.
+    if (Math.abs(v.currentTime - target) > 0.25) {
       ignoreNextEvent.current = true;
       v.currentTime = target;
     }
-  }, [syncState?.heartbeatTick, isMaster]);
+    if (syncState.isPlaying && v.paused && !syncState.isEnded && !isLoading) {
+      ignoreNextEvent.current = true;
+      v.play().catch(() => {});
+    }
+  }, [syncState, isMaster, isLoading]);
 
   // ====== MASTER: phát heartbeat định kỳ ======
   useEffect(() => {
@@ -196,7 +204,7 @@ const CameraTile = ({
     const labelHeight = isMaster ? 20 : 14;
     const dotRadius = isMaster ? 3 : 2;
 
-    results.forEach((item: any) => {
+    results.forEach((item) => {
       const [x1, y1, x2, y2] = item.box;
       const isNormal = String(item.action || "").includes("NORMAL");
       const color = isNormal ? "#22c55e" : "#ef4444";
@@ -238,34 +246,19 @@ const CameraTile = ({
     });
   };
 
-  // Phòng thi đã kết thúc theo data (statusType: ended)
-  if (initiallyEnded && !isMaster) {
-    return (
-      <div
-        onClick={onClick}
-        className={`relative cursor-pointer flex aspect-video w-full items-center justify-center bg-card ${className}`}
-      >
-        <div className="flex flex-col items-center gap-3 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
-            <Clock3 className="h-7 w-7 text-muted-foreground" />
-          </div>
-          <div>
-            <div className="text-base font-semibold text-foreground">Phòng thi đã kết thúc</div>
-            <div className="text-sm text-muted-foreground">{camera.room} • {camera.endTime}</div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const Wrapper: any = onClick ? "button" : "div";
   const videoSrc = syncState?.videoSrc ?? camera.video;
   const showEndedOverlaySmall = !isMaster && syncState?.isEnded;
 
   return (
-    <Wrapper
-      type={onClick ? "button" : undefined}
+    <div
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
       onClick={onClick}
+      onKeyDown={(event) => {
+        if (!onClick || (event.key !== "Enter" && event.key !== " ")) return;
+        event.preventDefault();
+        onClick();
+      }}
       className={`relative block w-full bg-black overflow-hidden ${className}`}
     >
       {/* Loading 5s overlay */}
@@ -309,6 +302,13 @@ const CameraTile = ({
           // Cả 2 đều KHÔNG loop – để onEnded chạy đúng và đồng bộ ended
           loop={false}
           controls={showControls && isMaster}
+          onLoadedMetadata={() => {
+            const v = videoRef.current;
+            if (!v || isLoading) return;
+            if (!isMaster && syncState) {
+              v.currentTime = syncState.isEnded ? Math.max(0, v.duration - 0.05) : syncState.currentTime;
+            }
+          }}
           onPlay={() => {
             isLooping.current = true;
             drawLoop();
@@ -354,13 +354,8 @@ const CameraTile = ({
           {syncState?.isEnded ? "ENDED" : "LIVE"}
         </div>
       )}
-    </Wrapper>
+    </div>
   );
 };
 
 export default CameraTile;
-
-export const useCameraCommands = () => {
-  const { emitReplay, changeVideo } = useCameraSync();
-  return { emitReplay, changeVideo };
-};

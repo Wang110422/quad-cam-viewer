@@ -1,6 +1,7 @@
 import { CameraData } from "@/data/cameras";
 import { Maximize2, Users, CircleAlert } from "lucide-react";
 import CameraTile from "./CameraTile";
+import { useCameraSync } from "@/contexts/CameraSyncContext";
 
 interface CameraGridProps {
   cameras: CameraData[];
@@ -9,9 +10,15 @@ interface CameraGridProps {
 }
 
 const CameraGrid = ({ cameras, selectedId, onSelect }: CameraGridProps) => {
+  const { getState } = useCameraSync();
+
   return (
     <div className="grid grid-cols-2 gap-4">
-      {cameras.map((cam) => (
+      {cameras.map((cam) => {
+        const syncState = getState(cam.id);
+        const isEnded = syncState?.isEnded ?? cam.statusType === "ended";
+
+        return (
         <div
           key={cam.id}
           className={`relative rounded-xl overflow-hidden border-2 transition-all group ${
@@ -35,7 +42,7 @@ const CameraGrid = ({ cameras, selectedId, onSelect }: CameraGridProps) => {
             <div className="flex items-center gap-2">
               <span
                 className={`w-2 h-2 rounded-full ${
-                  cam.statusType === "ended" ? "bg-warning" : "bg-success animate-pulse"
+                  isEnded ? "bg-warning" : "bg-success animate-pulse"
                 }`}
               />
               <span className="text-sm font-medium text-white">{cam.name}</span>
@@ -51,7 +58,7 @@ const CameraGrid = ({ cameras, selectedId, onSelect }: CameraGridProps) => {
                 <Users className="w-3.5 h-3.5" />
                 {cam.students}
               </div>
-              {cam.statusType === "ended" && (
+              {isEnded && (
                 <div className="flex items-center gap-1">
                   <CircleAlert className="h-3.5 w-3.5" />
                   Kết thúc
@@ -60,7 +67,7 @@ const CameraGrid = ({ cameras, selectedId, onSelect }: CameraGridProps) => {
             </div>
           </div>
         </div>
-      ))}
+      );})}
     </div>
   );
 };

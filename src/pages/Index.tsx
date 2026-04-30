@@ -245,6 +245,7 @@ const Index = () => {
         } : undefined}
       />
     </div>
+    </CameraSyncProvider>
   );
 };
 

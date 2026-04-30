@@ -45,6 +45,7 @@ const CameraDetail = ({
 
   const syncState = getState(camera.id);
   const isLoading = !!syncState && syncState.loadingUntil > Date.now();
+  const showEnded = isEnded || hasEndedOnce || !!syncState?.isEnded;
 
   const handleApplyVideo = () => {
     if (!pendingFile) return;
@@ -85,7 +86,7 @@ const CameraDetail = ({
           />
 
           {/* Replay overlay khi video đã kết thúc */}
-          {hasEndedOnce && !isLoading && (
+          {showEnded && !isLoading && (
             <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm">
               <div className="flex flex-col items-center gap-4 text-center text-white">
                 <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/20">
@@ -109,10 +110,10 @@ const CameraDetail = ({
           <div className="absolute top-4 left-4 z-20 flex items-center gap-2 rounded-full bg-background/90 px-3 py-1 text-sm font-medium text-foreground backdrop-blur-sm">
             <span
               className={`h-2 w-2 rounded-full ${
-                isEnded || hasEndedOnce ? "bg-warning" : "bg-destructive animate-pulse"
+                showEnded ? "bg-warning" : "bg-destructive animate-pulse"
               }`}
             />
-            {isEnded || hasEndedOnce ? "ENDED" : "LIVE"}
+            {showEnded ? "ENDED" : "LIVE"}
           </div>
           <div className="absolute bottom-16 right-4 z-20 rounded-md bg-background/75 px-3 py-1 text-sm text-foreground shadow-sm backdrop-blur-sm">
             {camera.endTime}

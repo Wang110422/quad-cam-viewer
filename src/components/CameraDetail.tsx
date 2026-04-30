@@ -1,4 +1,4 @@
-import { type ComponentType, useEffect, useRef, useState } from "react";
+import { type ComponentType, useRef, useState } from "react";
 import { CameraData } from "@/data/cameras";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,9 +13,11 @@ import {
   Pencil,
   Trash2,
   Clock3,
+  Upload,
+  RefreshCw,
 } from "lucide-react";
-import { socketService } from "@/services/socketServices";
-import SKELETON_CONNECTIONS from "@/const/skeleton_collections";
+import CameraTile from "./CameraTile";
+import { useCameraSync } from "@/contexts/CameraSyncContext";
 
 interface CameraDetailProps {
   camera: CameraData;
@@ -35,139 +37,26 @@ const CameraDetail = ({
   onVideoEnded,
 }: CameraDetailProps) => {
   const isEnded = camera.statusType === "ended";
+  const { changeVideo, emitReplay, getState } = useCameraSync();
 
-  // Refs riêng biệt cho TỪNG camera instance (mỗi lần mở camera khác sẽ tạo lại)
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const requestRef = useRef<number | null>(null);
-  const isLooping = useRef(false);
-  const aiResultsBuffer = useRef<Map<number, any[]>>(new Map());
-
-  // States nội bộ – tách biệt theo từng camera (component remount khi camera.id đổi nhờ key ở cha)
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [hasEndedOnce, setHasEndedOnce] = useState(false);
-  const [showReplayOverlay, setShowReplayOverlay] = useState(true);
 
-  // Reset toàn bộ state/refs khi đổi camera
-  useEffect(() => {
-    aiResultsBuffer.current = new Map();
-    isLooping.current = false;
-    setIsInitialLoading(true);
+  const syncState = getState(camera.id);
+  const isLoading = !!syncState && syncState.loadingUntil > Date.now();
+
+  const handleApplyVideo = () => {
+    if (!pendingFile) return;
+    const url = URL.createObjectURL(pendingFile);
+    changeVideo(camera.id, url);
+    setPendingFile(null);
     setHasEndedOnce(false);
-    setShowReplayOverlay(true);
-
-    const socket = socketService.connect();
-
-    const handleConnect = () => {
-      console.log(`✅ Socket connected (cam ${camera.id}):`, socket.id);
-    };
-
-    const handleDataBox = (data: { timestamp: string | number; results: any[] }) => {
-      const ts = Number(parseFloat(String(data.timestamp)).toFixed(1));
-      aiResultsBuffer.current.set(ts, data.results);
-    };
-
-    socket.on("connect", handleConnect);
-    socket.on("data_box", handleDataBox);
-
-    // Đợi 5s cho AI khởi động
-    const startTimer = setTimeout(() => {
-      setIsInitialLoading(false);
-      setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.play().catch((err) => console.log("Autoplay blocked:", err));
-        }
-      }, 100);
-    }, 5000);
-
-    return () => {
-      clearTimeout(startTimer);
-      socket.off("connect", handleConnect);
-      socket.off("data_box", handleDataBox);
-      socketService.disconnect();
-      isLooping.current = false;
-      if (requestRef.current) cancelAnimationFrame(requestRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [camera.id]);
-
-  const drawLoop = () => {
-    if (!isLooping.current) return;
-    requestRef.current = requestAnimationFrame(drawLoop);
-
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas || video.paused || video.ended) return;
-
-    if (canvas.width !== video.videoWidth) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-    }
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    const currentTime = Number(video.currentTime.toFixed(1));
-    const results = aiResultsBuffer.current.get(currentTime);
-    if (!results || !Array.isArray(results)) return;
-
-    const scaleX = canvas.width / 1920;
-    const scaleY = canvas.height / 1080;
-
-    results.forEach((item: any) => {
-      const [x1, y1, x2, y2] = item.box;
-      const isNormal = String(item.action || "").includes("NORMAL");
-      const color = isNormal ? "#22c55e" : "#ef4444";
-
-      // Bounding box
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x1 * scaleX, y1 * scaleY, (x2 - x1) * scaleX, (y2 - y1) * scaleY);
-
-      // Label
-      const label = `ID ${item.id}: ${item.action}`;
-      ctx.font = "16px Arial";
-      const textWidth = ctx.measureText(label).width;
-      ctx.fillStyle = color;
-      ctx.fillRect(x1 * scaleX, y1 * scaleY - 25, textWidth + 10, 20);
-      ctx.fillStyle = "white";
-      ctx.fillText(label, x1 * scaleX + 5, y1 * scaleY - 10);
-
-      // Skeleton
-      if (item.keypoints && item.conf) {
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = color;
-
-        SKELETON_CONNECTIONS.forEach(([s, e]) => {
-          if (item.conf[s] > 0.2 && item.conf[e] > 0.2) {
-            const a = item.keypoints[s];
-            const b = item.keypoints[e];
-            ctx.beginPath();
-            ctx.moveTo(a[0] * scaleX, a[1] * scaleY);
-            ctx.lineTo(b[0] * scaleX, b[1] * scaleY);
-            ctx.stroke();
-          }
-        });
-
-        item.keypoints.forEach((kpt: number[], i: number) => {
-          if (item.conf[i] > 0.2) {
-            ctx.beginPath();
-            ctx.arc(kpt[0] * scaleX, kpt[1] * scaleY, 3, 0, 2 * Math.PI);
-            ctx.fillStyle = "white";
-            ctx.fill();
-          }
-        });
-      }
-    });
   };
 
   const handleReplay = () => {
-    if (videoRef.current) {
-      videoRef.current.currentTime = 0;
-      videoRef.current.play();
-    }
-    setShowReplayOverlay(false);
+    emitReplay(camera.id);
+    setHasEndedOnce(false);
   };
 
   return (
@@ -183,90 +72,98 @@ const CameraDetail = ({
       </div>
 
       <div className="flex gap-4 xl:flex-row flex-col">
-        <div className="flex-1 rounded-xl overflow-hidden border border-border relative bg-black">
-          {/* Loading overlay */}
-          {isInitialLoading && (
-            <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-              <div className="flex flex-col items-center gap-3 text-foreground">
-                <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-                <span className="text-sm font-medium">
-                  Đang khởi tạo AI Model (5s)...
-                </span>
-              </div>
-            </div>
-          )}
+        <div className="flex-1 rounded-xl overflow-hidden border border-border relative">
+          {/* CameraTile master */}
+          <CameraTile
+            camera={camera}
+            size="large"
+            showControls
+            onEnded={(id) => {
+              setHasEndedOnce(true);
+              onVideoEnded(id);
+            }}
+          />
 
           {/* Replay overlay khi video đã kết thúc */}
-          {showReplayOverlay && hasEndedOnce && (
-            <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-              <div className="flex flex-col items-center gap-4 text-center px-6">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-                  <Clock3 className="h-8 w-8 text-muted-foreground" />
+          {hasEndedOnce && !isLoading && (
+            <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+              <div className="flex flex-col items-center gap-4 text-center text-white">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/20">
+                  <Clock3 className="h-8 w-8 text-white" />
                 </div>
                 <div>
-                  <div className="text-xl font-semibold text-foreground">
-                    Phòng thi đã kết thúc
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    Bạn có thể xem lại video và tua tự do
-                  </div>
+                  <div className="text-xl font-semibold">Phòng thi đã kết thúc</div>
+                  <p className="text-sm text-gray-300">Bạn có thể xem lại video và tua tự do</p>
                 </div>
                 <button
                   onClick={handleReplay}
-                  className="mt-2 rounded-full bg-primary px-6 py-2 font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+                  className="mt-2 inline-flex items-center gap-2 rounded-full bg-primary px-6 py-2 font-medium hover:bg-primary/90 transition-colors"
                 >
-                  Xem lại từ đầu
+                  <RefreshCw className="h-4 w-4" /> Xem lại từ đầu
                 </button>
               </div>
             </div>
           )}
 
-          {/* Video + canvas overlay */}
-          <div className="relative w-full aspect-video">
-            <video
-              ref={videoRef}
-              src={camera.video}
-              poster={camera.image}
-              className="absolute inset-0 w-full h-full object-cover"
-              controls
-              muted
-              playsInline
-              onPlay={() => {
-                isLooping.current = true;
-                drawLoop();
-              }}
-              onPause={() => {
-                isLooping.current = false;
-              }}
-              onEnded={() => {
-                setHasEndedOnce(true);
-                setShowReplayOverlay(true);
-                isLooping.current = false;
-                onVideoEnded(camera.id);
-              }}
-            />
-            <canvas
-              ref={canvasRef}
-              className="pointer-events-none absolute inset-0 w-full h-full"
-            />
-          </div>
-
-          <div className="absolute top-4 left-4 z-10 flex items-center gap-2 rounded-full bg-background/90 px-3 py-1 text-sm font-medium text-foreground backdrop-blur-sm">
+          {/* Trạng thái Live/Ended */}
+          <div className="absolute top-4 left-4 z-20 flex items-center gap-2 rounded-full bg-background/90 px-3 py-1 text-sm font-medium text-foreground backdrop-blur-sm">
             <span
               className={`h-2 w-2 rounded-full ${
-                isEnded || hasEndedOnce
-                  ? "bg-warning"
-                  : "bg-destructive animate-pulse"
+                isEnded || hasEndedOnce ? "bg-warning" : "bg-destructive animate-pulse"
               }`}
             />
             {isEnded || hasEndedOnce ? "ENDED" : "LIVE"}
           </div>
-          <div className="absolute bottom-16 right-4 z-10 rounded-md bg-background/75 px-3 py-1 text-sm text-foreground shadow-sm backdrop-blur-sm">
+          <div className="absolute bottom-16 right-4 z-20 rounded-md bg-background/75 px-3 py-1 text-sm text-foreground shadow-sm backdrop-blur-sm">
             {camera.endTime}
           </div>
         </div>
 
         <div className="w-full xl:w-[420px] shrink-0 flex flex-col gap-4">
+          {/* Khối chọn video & Thay đổi */}
+          <div className="rounded-xl border border-border bg-card p-4">
+            <h3 className="font-semibold text-foreground mb-1">Cập nhật video</h3>
+            <p className="text-sm text-muted-foreground mb-3">
+              Chọn 1 video minh họa rồi bấm <b>Thay đổi</b> để cập nhật cho cả camera lớn và camera nhỏ tương ứng (cùng ID).
+            </p>
+            <div className="flex flex-col gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="video/*"
+                className="hidden"
+                onChange={(e) => setPendingFile(e.target.files?.[0] ?? null)}
+              />
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1 justify-start"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload className="w-4 h-4" />
+                  {pendingFile ? "Đổi file khác" : "Chọn video"}
+                </Button>
+                <Button
+                  type="button"
+                  className="flex-1 justify-center"
+                  disabled={!pendingFile || isLoading}
+                  onClick={handleApplyVideo}
+                >
+                  <RefreshCw className="w-4 h-4" /> Thay đổi
+                </Button>
+              </div>
+              {pendingFile && (
+                <div className="text-xs text-muted-foreground truncate">
+                  Đã chọn: <span className="text-foreground font-medium">{pendingFile.name}</span>
+                </div>
+              )}
+              {isLoading && (
+                <div className="text-xs text-primary">Đang khởi tạo AI Model (5s)...</div>
+              )}
+            </div>
+          </div>
+
           <div className="rounded-xl border border-border bg-card p-4">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
@@ -277,9 +174,7 @@ const CameraDetail = ({
               </div>
               <span
                 className={`rounded-full px-2 py-1 text-xs font-medium ${
-                  isEnded
-                    ? "bg-warning/15 text-warning"
-                    : "bg-success/15 text-success"
+                  isEnded ? "bg-warning/15 text-warning" : "bg-success/15 text-success"
                 }`}
               >
                 {camera.status}

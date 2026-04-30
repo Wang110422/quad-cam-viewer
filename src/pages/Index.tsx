@@ -7,6 +7,7 @@ import RoomFormDialog, { type RoomFormValues } from "@/components/RoomFormDialog
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { Calendar, Clock, Bell, Plus } from "lucide-react";
+import { CameraSyncProvider } from "@/contexts/CameraSyncContext";
 
 const formatDateTime = (value: string) => {
   if (!value) return "";

@@ -198,6 +198,7 @@ const Index = () => {
           />
           {selectedCamera && (
             <CameraDetail
+              key={selectedCamera.id}
               camera={selectedCamera}
               onClose={() => setSelectedCameraId(null)}
               onDelete={handleDeleteRoom}

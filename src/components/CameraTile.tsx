@@ -231,26 +231,6 @@ const CameraTile = ({
     });
   };
 
-  // Phòng thi đã kết thúc theo data (statusType: ended)
-  if (initiallyEnded && !isMaster) {
-    return (
-      <div
-        onClick={onClick}
-        className={`relative cursor-pointer flex aspect-video w-full items-center justify-center bg-card ${className}`}
-      >
-        <div className="flex flex-col items-center gap-3 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
-            <Clock3 className="h-7 w-7 text-muted-foreground" />
-          </div>
-          <div>
-            <div className="text-base font-semibold text-foreground">Phòng thi đã kết thúc</div>
-            <div className="text-sm text-muted-foreground">{camera.room} • {camera.endTime}</div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const Wrapper: any = onClick ? "button" : "div";
   const videoSrc = syncState?.videoSrc ?? camera.video;
   const showEndedOverlaySmall = !isMaster && syncState?.isEnded;

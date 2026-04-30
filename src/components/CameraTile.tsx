@@ -25,18 +25,9 @@ const CameraTile = ({
   const initiallyEnded = camera.statusType === "ended";
   const isMaster = size === "large";
 
-  const {
-    getState,
-    ensureCamera,
-    version,
-    emitPlay,
-    emitPause,
-    emitSeek,
-    emitEnded,
-    emitHeartbeat,
-  } = useCameraSync();
+  const { getState, ensureCamera, version, emitPlay, emitPause, emitSeek, emitEnded, emitHeartbeat } = useCameraSync();
 
-  ensureCamera(camera.id, camera.video);
+  ensureCamera(camera.id, camera.video, initiallyEnded);
   const syncState = getState(camera.id);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -105,6 +96,8 @@ const CameraTile = ({
     const v = videoRef.current;
     if (!v) return;
 
+    if (isLoading) return;
+
     // Replay: về 0 + play
     if (syncState.replayTick !== lastReplayTick.current) {
       lastReplayTick.current = syncState.replayTick;
@@ -138,7 +131,7 @@ const CameraTile = ({
       ignoreNextEvent.current = true;
       v.pause();
     }
-  }, [version, isMaster, syncState]);
+  }, [version, isMaster, syncState, isLoading]);
 
   // ====== SLAVE: heartbeat sync currentTime để tránh drift ======
   useEffect(() => {

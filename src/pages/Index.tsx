@@ -153,6 +153,7 @@ const Index = () => {
   };
 
   return (
+    <CameraSyncProvider>
     <div className="flex h-screen overflow-hidden">
       <AppSidebar />
       <main className="flex-1 flex flex-col overflow-hidden">

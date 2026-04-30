@@ -14,6 +14,14 @@ interface CameraTileProps {
   className?: string;
 }
 
+type AiResult = {
+  id: string | number;
+  action?: string;
+  box: [number, number, number, number];
+  keypoints?: number[][];
+  conf?: number[];
+};
+
 const CameraTile = ({
   camera,
   size = "small",
@@ -34,7 +42,7 @@ const CameraTile = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const requestRef = useRef<number | null>(null);
   const isLooping = useRef(false);
-  const aiResultsBuffer = useRef<Map<number, any[]>>(new Map());
+  const aiResultsBuffer = useRef<Map<number, AiResult[]>>(new Map());
 
   const ignoreNextEvent = useRef(false);
 
@@ -49,14 +57,14 @@ const CameraTile = ({
 
   // Đếm ngược loading overlay
   const [now, setNow] = useState(Date.now());
-  const isLoading =
-    !!syncState && syncState.loadingUntil > 0 && syncState.loadingUntil > now;
+  const loadingUntil = syncState?.loadingUntil ?? 0;
+  const isLoading = loadingUntil > 0 && loadingUntil > now;
 
   useEffect(() => {
-    if (!syncState || syncState.loadingUntil <= 0) return;
+    if (loadingUntil <= 0) return;
     const interval = setInterval(() => setNow(Date.now()), 200);
     return () => clearInterval(interval);
-  }, [syncState?.loadingUntil]);
+  }, [loadingUntil]);
 
   // Pause video trong khi loading
   useEffect(() => {
@@ -72,7 +80,7 @@ const CameraTile = ({
   useEffect(() => {
     if (initiallyEnded) return;
     const socket = socketService.connect();
-    const handleDataBox = (data: { timestamp: string | number; results: any[] }) => {
+    const handleDataBox = (data: { timestamp: string | number; results: AiResult[] }) => {
       const ts = Number(parseFloat(String(data.timestamp)).toFixed(1));
       aiResultsBuffer.current.set(ts, data.results);
     };

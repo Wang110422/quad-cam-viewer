@@ -90,9 +90,9 @@ const CameraTile = ({
     aiResultsBuffer.current = new Map();
   }, [syncState?.videoSrc]);
 
-  // ====== SLAVE: lắng nghe lệnh từ master ======
+  // ====== MASTER/SLAVE: lắng nghe lệnh chung từ context ======
   useEffect(() => {
-    if (isMaster || !syncState) return;
+    if (!syncState) return;
     const v = videoRef.current;
     if (!v) return;
 
@@ -125,8 +125,8 @@ const CameraTile = ({
       ignoreNextEvent.current = true;
       v.play().catch(() => {});
     }
-    // Ended: master ended → slave dừng tại frame cuối
-    if (syncState.endedTick !== lastEndedTick.current) {
+    // Ended: slave dừng tại frame cuối, master bỏ qua vì chính nó phát event ended
+    if (!isMaster && syncState.endedTick !== lastEndedTick.current) {
       lastEndedTick.current = syncState.endedTick;
       ignoreNextEvent.current = true;
       v.pause();
@@ -139,12 +139,16 @@ const CameraTile = ({
     const v = videoRef.current;
     if (!v) return;
     const target = syncState.currentTime;
-    // Chỉ sync khi drift > 0.5s và đang play (tránh giật khi đang pause)
-    if (!v.paused && Math.abs(v.currentTime - target) > 0.5) {
+    // Sync nếu lệch thời gian; nếu master đang phát mà slave bị pause thì play lại.
+    if (Math.abs(v.currentTime - target) > 0.25) {
       ignoreNextEvent.current = true;
       v.currentTime = target;
     }
-  }, [syncState?.heartbeatTick, isMaster]);
+    if (syncState.isPlaying && v.paused && !syncState.isEnded && !isLoading) {
+      ignoreNextEvent.current = true;
+      v.play().catch(() => {});
+    }
+  }, [syncState?.heartbeatTick, isMaster, isLoading]);
 
   // ====== MASTER: phát heartbeat định kỳ ======
   useEffect(() => {

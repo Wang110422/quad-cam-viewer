@@ -1,19 +1,29 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import AppSidebar from "@/components/AppSidebar";
-import { rooms } from "@/data/rooms";
+import { useRoomsStore } from "@/data/roomsStore";
 import { violations } from "@/data/violations";
 import { Card } from "@/components/ui/card";
-import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Badge } from "@/components/ui/badge";
+import {
+  Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart,
+  ResponsiveContainer, Tooltip, XAxis, YAxis,
+} from "recharts";
+import { ChevronRight } from "lucide-react";
+
+const COLORS = ["hsl(var(--primary))", "#eab308", "hsl(var(--destructive))"];
 
 const StatisticsPage = () => {
+  const rooms = useRoomsStore();
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+
   const data = useMemo(() => {
     return rooms.map((r) => {
       const v = violations.filter((x) => x.room === r.room).length;
       const present = r.roomStatus === "upcoming" ? 0 : r.present;
       const absent = r.roomStatus === "upcoming" ? 0 : r.absent;
-      return { name: r.room, "Có mặt": present, "Vắng mặt": absent, "Vi phạm": v };
+      return { id: r.id, name: r.room, "Có mặt": present, "Vắng mặt": absent, "Vi phạm": v };
     });
-  }, []);
+  }, [rooms]);
 
   const totals = useMemo(() => {
     return data.reduce(
@@ -25,6 +35,23 @@ const StatisticsPage = () => {
       { present: 0, absent: 0, violation: 0 },
     );
   }, [data]);
+
+  const selectedRoom = rooms.find((r) => r.id === selectedId) || null;
+  const selectedData = data.find((d) => d.id === selectedId) || null;
+
+  const pieData = selectedData
+    ? [
+        { name: "Có mặt", value: selectedData["Có mặt"] },
+        { name: "Vắng mặt", value: selectedData["Vắng mặt"] },
+        { name: "Vi phạm", value: selectedData["Vi phạm"] },
+      ].filter((d) => d.value > 0)
+    : [];
+
+  const total = pieData.reduce((s, d) => s + d.value, 0);
+  const top = pieData.length
+    ? [...pieData].sort((a, b) => b.value - a.value)[0]
+    : null;
+  const topPct = top && total > 0 ? Math.round((top.value / total) * 100) : 0;
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -49,6 +76,7 @@ const StatisticsPage = () => {
               <div className="text-2xl font-bold text-destructive">{totals.violation}</div>
             </Card>
           </div>
+
           <Card className="p-4">
             <div className="font-semibold mb-4">Theo phòng thi</div>
             <div className="w-full h-[420px]">
@@ -66,6 +94,122 @@ const StatisticsPage = () => {
               </ResponsiveContainer>
             </div>
           </Card>
+
+          <Card className="p-4">
+            <div className="font-semibold mb-3">Danh sách phòng thi</div>
+            <p className="text-xs text-muted-foreground mb-3">Bấm vào một phòng để xem thống kê chi tiết.</p>
+            <div className="space-y-2">
+              {rooms.map((r) => {
+                const d = data.find((x) => x.id === r.id);
+                const active = selectedId === r.id;
+                return (
+                  <button
+                    key={r.id}
+                    onClick={() => setSelectedId(active ? null : r.id)}
+                    className={`w-full text-left rounded-lg border px-4 py-3 flex items-center gap-4 transition-colors ${
+                      active ? "border-primary bg-accent" : "border-border hover:bg-accent/50"
+                    }`}
+                  >
+                    <div className="min-w-[160px]">
+                      <div className="font-medium text-foreground">{r.room}</div>
+                      <div className="text-xs text-muted-foreground">Lớp {r.className}</div>
+                    </div>
+                    <div className="text-sm text-muted-foreground">{r.building} • {r.floor}</div>
+                    <div className="ml-auto flex items-center gap-3 text-sm">
+                      <span className="text-emerald-600">CM: {d?.["Có mặt"] ?? 0}</span>
+                      <span className="text-yellow-600">VM: {d?.["Vắng mặt"] ?? 0}</span>
+                      <span className="text-destructive">VP: {d?.["Vi phạm"] ?? 0}</span>
+                      <ChevronRight className={`w-4 h-4 transition-transform ${active ? "rotate-90" : ""}`} />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </Card>
+
+          {selectedRoom && selectedData && (
+            <Card className="p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-semibold">Chi tiết: {selectedRoom.room}</div>
+                  <div className="text-xs text-muted-foreground">
+                    Lớp {selectedRoom.className} • {selectedRoom.building} • {selectedRoom.floor} • Giám thị: {selectedRoom.supervisor}
+                  </div>
+                </div>
+                {top && (
+                  <Badge variant="outline" className="text-sm">
+                    {top.name} chiếm {topPct}% (cao nhất)
+                  </Badge>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="h-[300px]">
+                  {pieData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={pieData}
+                          dataKey="value"
+                          nameKey="name"
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={100}
+                          label={(e) => `${e.name}: ${Math.round((e.value / total) * 100)}%`}
+                        >
+                          {pieData.map((_, i) => (
+                            <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                        <Legend />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
+                      Phòng thi chưa diễn ra — chưa có dữ liệu thống kê.
+                    </div>
+                  )}
+                </div>
+
+                <div className="h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={[selectedData]}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" />
+                      <YAxis allowDecimals={false} />
+                      <Tooltip />
+                      <Legend />
+                      <Bar dataKey="Có mặt" fill="hsl(var(--primary))" />
+                      <Bar dataKey="Vắng mặt" fill="#eab308" />
+                      <Bar dataKey="Vi phạm" fill="hsl(var(--destructive))" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 text-sm">
+                <div className="rounded-lg border border-border p-3">
+                  <div className="text-muted-foreground">Có mặt</div>
+                  <div className="text-lg font-semibold text-emerald-600">
+                    {selectedData["Có mặt"]} {total > 0 && `(${Math.round((selectedData["Có mặt"] / total) * 100)}%)`}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-border p-3">
+                  <div className="text-muted-foreground">Vắng mặt</div>
+                  <div className="text-lg font-semibold text-yellow-600">
+                    {selectedData["Vắng mặt"]} {total > 0 && `(${Math.round((selectedData["Vắng mặt"] / total) * 100)}%)`}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-border p-3">
+                  <div className="text-muted-foreground">Vi phạm</div>
+                  <div className="text-lg font-semibold text-destructive">
+                    {selectedData["Vi phạm"]} {total > 0 && `(${Math.round((selectedData["Vi phạm"] / total) * 100)}%)`}
+                  </div>
+                </div>
+              </div>
+            </Card>
+          )}
         </div>
       </main>
     </div>

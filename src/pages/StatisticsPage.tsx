@@ -95,6 +95,8 @@ const StatisticsPage = () => {
             </div>
           </Card>
 
+          <BehaviorTimeChart />
+
           <Card className="p-4">
             <div className="font-semibold mb-3">Danh sách phòng thi</div>
             <p className="text-xs text-muted-foreground mb-3">Bấm vào một phòng để xem thống kê chi tiết.</p>

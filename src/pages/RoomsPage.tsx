@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
 import { statusOrder, type RoomStatusType } from "@/data/rooms";
-import { useRoomsStore, addRoom } from "@/data/roomsStore";
+import { useRoomsStore, addRoom, removeRoom } from "@/data/roomsStore";
 import AppSidebar from "@/components/AppSidebar";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Building2, DoorOpen, Eye, Plus, Users } from "lucide-react";
+import { Building2, DoorOpen, Eye, Plus, Trash2, Users } from "lucide-react";
 import RoomFormDialog, { type RoomFormValues } from "@/components/RoomFormDialog";
 import { useToast } from "@/components/ui/use-toast";
 import { cameras } from "@/data/cameras";
@@ -111,6 +111,19 @@ const RoomsPage = () => {
                   <div className="text-sm text-muted-foreground italic">—</div>
                 )}
                 <Badge variant="outline">{statusLabel[r.roomStatus]}</Badge>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => {
+                    if (confirm(`Xóa ${r.room}?`)) {
+                      removeRoom(r.id);
+                      toast({ title: "Đã xóa phòng thi", description: r.room });
+                    }
+                  }}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
               </div>
             </Card>
           ))}

@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, Mail, Phone, MapPin, Briefcase } from "lucide-react";
+import { Plus, Mail, Phone, MapPin, Briefcase, Trash2 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
 const SupervisorsPage = () => {
@@ -88,9 +88,24 @@ const SupervisorsPage = () => {
                       <div className="text-xs text-muted-foreground">{s.gender} • {s.dob}</div>
                     </div>
                   </div>
-                  <Badge variant={working ? "default" : "secondary"}>
-                    {working ? `Đang trực ${s.assignedRoom}` : "Trống"}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={working ? "default" : "secondary"}>
+                      {working ? `Đang trực ${s.assignedRoom}` : "Trống"}
+                    </Badge>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-destructive hover:text-destructive h-8 w-8"
+                      onClick={() => {
+                        if (confirm(`Xóa giám thị ${s.name}?`)) {
+                          setList((p) => p.filter((x) => x.id !== s.id));
+                          toast({ title: "Đã xóa giám thị", description: s.name });
+                        }
+                      }}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
                 <div className="space-y-1 text-sm text-muted-foreground">
                   <div className="flex items-center gap-2"><Mail className="w-4 h-4" /> {s.email}</div>

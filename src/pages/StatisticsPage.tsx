@@ -5,12 +5,77 @@ import { violations } from "@/data/violations";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart,
+  Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { ChevronRight } from "lucide-react";
 
 const COLORS = ["hsl(var(--primary))", "#eab308", "hsl(var(--destructive))"];
+const BEHAVIOR_COLORS = ["hsl(var(--primary))", "hsl(var(--destructive))", "#eab308", "#10b981", "#8b5cf6", "#f97316"];
+
+const BehaviorTimeChart = () => {
+  const { buckets, behaviors, dominantPerBucket } = useMemo(() => {
+    const events = violations.flatMap((v) =>
+      v.frameLogs.map((f) => ({ time: new Date(v.time), behavior: f.behavior })),
+    );
+    if (!events.length) return { buckets: [], behaviors: [] as string[], dominantPerBucket: [] as { label: string; behavior: string; count: number }[] };
+
+    const behaviorSet = Array.from(new Set(events.map((e) => e.behavior)));
+    const bucketMap = new Map<string, Record<string, number>>();
+    for (const e of events) {
+      const d = e.time;
+      const m = d.getMinutes() < 30 ? "00" : "30";
+      const label = `${String(d.getHours()).padStart(2, "0")}:${m}`;
+      const cur = bucketMap.get(label) ?? {};
+      cur[e.behavior] = (cur[e.behavior] ?? 0) + 1;
+      bucketMap.set(label, cur);
+    }
+    const labels = Array.from(bucketMap.keys()).sort();
+    const buckets = labels.map((label) => {
+      const row: Record<string, number | string> = { time: label };
+      for (const b of behaviorSet) row[b] = bucketMap.get(label)?.[b] ?? 0;
+      return row;
+    });
+    const dominantPerBucket = labels.map((label) => {
+      const row = bucketMap.get(label) ?? {};
+      const top = Object.entries(row).sort((a, b) => (b[1] as number) - (a[1] as number))[0];
+      return { label, behavior: top?.[0] ?? "—", count: (top?.[1] as number) ?? 0 };
+    });
+    return { buckets, behaviors: behaviorSet, dominantPerBucket };
+  }, []);
+
+  if (!buckets.length) return null;
+
+  return (
+    <Card className="p-4">
+      <div className="font-semibold mb-1">Vi phạm theo thời gian</div>
+      <p className="text-xs text-muted-foreground mb-3">
+        Trục dọc: số lượng theo hành vi • Trục ngang: thời gian (mỗi mốc 30 phút)
+      </p>
+      <div className="w-full h-[360px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={buckets}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="time" />
+            <YAxis allowDecimals={false} />
+            <Tooltip />
+            <Legend />
+            {behaviors.map((b, i) => (
+              <Line key={b} type="monotone" dataKey={b} stroke={BEHAVIOR_COLORS[i % BEHAVIOR_COLORS.length]} strokeWidth={2} dot={{ r: 4 }} />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {dominantPerBucket.map((d) => (
+          <Badge key={d.label} variant="outline" className="text-xs">
+            {d.label}: {d.behavior} ({d.count})
+          </Badge>
+        ))}
+      </div>
+    </Card>
+  );
+};
 
 const StatisticsPage = () => {
   const rooms = useRoomsStore();
@@ -94,6 +159,8 @@ const StatisticsPage = () => {
               </ResponsiveContainer>
             </div>
           </Card>
+
+          <BehaviorTimeChart />
 
           <Card className="p-4">
             <div className="font-semibold mb-3">Danh sách phòng thi</div>

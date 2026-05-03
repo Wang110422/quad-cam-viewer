@@ -21,6 +21,11 @@ export const updateRoom = (id: number, patch: Partial<RoomData>) => {
   emit();
 };
 
+export const removeRoom = (id: number) => {
+  store = store.filter((r) => r.id !== id);
+  emit();
+};
+
 export const useRoomsStore = (): RoomData[] => {
   const [, setTick] = useState(0);
   useEffect(() => {

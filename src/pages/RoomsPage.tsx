@@ -41,9 +41,8 @@ const RoomsPage = () => {
     [rooms],
   );
 
-  const handleAdd = (v: RoomFormValues) => {
-    addRoom({
-      name: `Phòng ${v.room}`,
+  const handleAdd = async (v: RoomFormValues) => {
+    await addRoom({
       room: v.room,
       className: v.className,
       students: v.students,
@@ -52,12 +51,8 @@ const RoomsPage = () => {
       floor: v.floor,
       building: v.building,
       supervisor: v.supervisor,
-      status: "Chưa diễn ra",
-      statusType: "live",
-      startTime: formatDateTime(v.startTime),
-      endTime: formatDateTime(v.endTime),
-      image: cameras[0].image,
-      video: "",
+      startTime: v.startTime, // ISO từ datetime-local
+      endTime: v.endTime,
       roomStatus: "upcoming",
     });
     setOpen(false);

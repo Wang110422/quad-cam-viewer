@@ -1,11 +1,11 @@
+// Legacy shim — UI cũ vẫn import từ đây.
+// Dữ liệu thật giờ đến từ src/api/* (mock hoặc backend qua axios).
+import { mockCameras } from "@/data/mock/cameras.mock";
+import { mockRooms } from "@/data/mock/rooms.mock";
 import classroom1 from "@/assets/classroom1.jpg";
 import classroom2 from "@/assets/classroom2.jpg";
 import classroom3 from "@/assets/classroom3.jpg";
 import classroom4 from "@/assets/classroom4.jpg";
-import classroomVideo1 from "@/assets/videos/classroom1.mp4";
-import classroomVideo2 from "@/assets/videos/classroom2.mp4";
-import classroomVideo3 from "@/assets/videos/classroom3.mp4";
-import classroomVideo4 from "@/assets/videos/classroom4.mp4";
 
 export interface CameraData {
   id: number;
@@ -27,81 +27,36 @@ export interface CameraData {
   notes?: string;
 }
 
-export const cameras: CameraData[] = [
-  {
-    id: 1,
-    name: "CAM 01 - Phòng 101",
-    room: "Phòng 101",
-    className: "12A1",
-    students: 30,
-    present: 30,
-    absent: 0,
-    floor: "Tầng 1",
-    building: "Nhà A",
-    supervisor: "Nguyễn Văn A",
-    status: "Đang hoạt động",
-    statusType: "live",
-    startTime: "24/05/2025 07:30",
-    endTime: "24/05/2025 10:30",
-    image: classroom1,
-    video: classroomVideo1,
-    notes: "Phòng thi khối A, camera chính hướng về toàn bộ lớp.",
-  },
-  {
-    id: 2,
-    name: "CAM 02 - Phòng 102",
-    room: "Phòng 102",
-    className: "12A2",
-    students: 28,
-    present: 28,
-    absent: 0,
-    floor: "Tầng 1",
-    building: "Nhà A",
-    supervisor: "Trần Thị B",
-    status: "Đang hoạt động",
-    statusType: "live",
-    startTime: "24/05/2025 07:30",
-    endTime: "24/05/2025 10:30",
-    image: classroom2,
-    video: classroomVideo2,
-    notes: "Phòng thi có giám thị phụ trách theo dõi khu vực giữa lớp.",
-  },
-  {
-    id: 3,
-    name: "CAM 03 - Phòng 103",
-    room: "Phòng 103",
-    className: "12A3",
-    students: 29,
-    present: 29,
-    absent: 0,
-    floor: "Tầng 1",
-    building: "Nhà A",
-    supervisor: "Lê Văn C",
-    status: "Đang hoạt động",
-    statusType: "live",
-    startTime: "24/05/2025 07:30",
-    endTime: "24/05/2025 10:30",
-    image: classroom3,
-    video: classroomVideo3,
-    notes: "Camera phục vụ theo dõi dãy bàn phía cửa sổ.",
-  },
-  {
-    id: 4,
-    name: "CAM 04 - Phòng 104",
-    room: "Phòng 104",
-    className: "12A4",
-    students: 27,
-    present: 27,
-    absent: 0,
-    floor: "Tầng 1",
-    building: "Nhà B",
-    supervisor: "Phạm Thị D",
-    status: "Đang hoạt động",
-    statusType: "live",
-    startTime: "24/05/2025 07:30",
-    endTime: "24/05/2025 10:30",
-    image: classroom4,
-    video: classroomVideo4,
-    notes: "Phòng thi khu B, ưu tiên giám sát bàn đầu và cuối lớp.",
-  },
-];
+const images = [classroom1, classroom2, classroom3, classroom4];
+
+const formatVN = (iso: string) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? iso
+    : new Intl.DateTimeFormat("vi-VN", {
+        day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+      }).format(d);
+};
+
+export const cameras: CameraData[] = mockCameras.map((cam, i) => {
+  const room = mockRooms.find((r) => r.id === cam.room_id)!;
+  return {
+    id: cam.id,
+    name: cam.name,
+    room: room.name,
+    className: room.class_name,
+    students: room.total_students,
+    present: room.present,
+    absent: room.absent,
+    floor: room.floor,
+    building: room.building,
+    supervisor: room.supervisor,
+    status: room.status === "ended" ? "Đã kết thúc" : "Đang hoạt động",
+    statusType: room.status === "ended" ? "ended" : "live",
+    startTime: formatVN(room.startTime),
+    endTime: formatVN(room.endTime),
+    image: images[i % images.length],
+    video: cam.video,
+    notes: cam.note,
+  };
+});

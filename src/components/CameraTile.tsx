@@ -30,7 +30,7 @@ const CameraTile = ({
   onClick,
   className = "",
 }: CameraTileProps) => {
-  const initiallyEnded = camera.statusType === "ended";
+  const initiallyEnded = false; // Camera không có status — trạng thái lấy từ Room.
   const isMaster = size === "large";
 
   const { getState, ensureCamera, version, emitPlay, emitPause, emitSeek, emitEnded, emitHeartbeat } = useCameraSync();

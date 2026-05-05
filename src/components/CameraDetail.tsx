@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import CameraTile from "./CameraTile";
 import { useCameraSync } from "@/contexts/CameraSyncContext";
+import { useRoomsStore } from "@/data/roomsStore";
 
 interface CameraDetailProps {
   camera: CameraData;
@@ -36,7 +37,10 @@ const CameraDetail = ({
   onExport,
   onVideoEnded,
 }: CameraDetailProps) => {
-  const isEnded = camera.statusType === "ended";
+  const rooms = useRoomsStore();
+  const linkedRoom = rooms.find((r) => r.id === camera.roomId);
+  const isEnded = linkedRoom?.roomStatus === "ended";
+  const statusLabel = linkedRoom?.status ?? "Đang hoạt động";
   const { changeVideo, emitReplay, getState } = useCameraSync();
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -178,7 +182,7 @@ const CameraDetail = ({
                   isEnded ? "bg-warning/15 text-warning" : "bg-success/15 text-success"
                 }`}
               >
-                {camera.status}
+                {statusLabel}
               </span>
             </div>
             <div className="space-y-2 text-sm">

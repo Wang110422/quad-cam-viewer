@@ -11,7 +11,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { supervisors } from "@/data/supervisors";
+import { useSupervisorsStore } from "@/data/supervisorsStore";
 
 export interface RoomFormValues {
   room: string;
@@ -50,6 +50,7 @@ interface Props {
 }
 
 const RoomFormDialog = ({ open, onOpenChange, onSubmit, title, description, submitLabel, initialValues }: Props) => {
+  const supervisors = useSupervisorsStore();
   const [values, setValues] = useState<RoomFormValues>(defaults);
   const [errors, setErrors] = useState<Partial<Record<keyof RoomFormValues, string>>>({});
 
@@ -66,7 +67,7 @@ const RoomFormDialog = ({ open, onOpenChange, onSubmit, title, description, subm
     const e: Partial<Record<keyof RoomFormValues, string>> = {};
     if (!values.room.trim()) e.room = "Nhập tên phòng";
     if (!values.className.trim()) e.className = "Nhập lớp";
-    if (!values.supervisor.trim()) e.supervisor = "Chọn hoặc nhập giám thị";
+    if (!values.supervisor.trim()) e.supervisor = "Chọn giám thị";
     if (!values.startTime) e.startTime = "Chọn thời gian bắt đầu";
     if (!values.endTime) e.endTime = "Chọn thời gian kết thúc";
     if (values.present + values.absent !== values.students) e.students = "Có mặt + vắng phải bằng tổng SV";
@@ -119,7 +120,7 @@ const RoomFormDialog = ({ open, onOpenChange, onSubmit, title, description, subm
                 onValueChange={(v) => setValues((p) => ({ ...p, supervisor: v }))}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Chọn giám thị từ danh sách" />
+                  <SelectValue placeholder={supervisors.length ? "Chọn giám thị từ danh sách" : "Chưa có giám thị — thêm tại trang Giám thị"} />
                 </SelectTrigger>
                 <SelectContent>
                   {supervisors.map((s) => (

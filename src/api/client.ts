@@ -3,6 +3,9 @@ import axios, { AxiosError, type AxiosInstance } from "axios";
 /**
  * Axios instance dùng chung. Backend chỉ cần set VITE_API_BASE_URL trong .env
  * và toàn bộ request sẽ trỏ về đó.
+ *
+ * VD .env:
+ *   VITE_API_BASE_URL=https://api.example.com
  */
 export const apiClient: AxiosInstance = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL ?? "/api",
@@ -25,6 +28,3 @@ apiClient.interceptors.response.use(
     return Promise.reject(err);
   },
 );
-
-/** Bật/tắt mock mode khi backend chưa sẵn sàng. */
-export const USE_MOCK = (import.meta.env.VITE_USE_MOCK ?? "true") === "true";

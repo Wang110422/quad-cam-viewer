@@ -1,35 +1,10 @@
 import { useEffect, useState } from "react";
-import { roomsApi } from "@/api";
-import { camerasApi } from "@/api/cameras.api";
-import { mockCameras } from "@/data/mock/cameras.mock";
+import { roomsApi, camerasApi } from "@/api";
 import type { Camera, Room, RoomStatus } from "@/types/models";
+import type { RoomData, RoomStatusType } from "@/data/rooms";
 
-/**
- * View-model giữ tương thích với UI cũ. Khi backend thay đổi schema,
- * chỉ cần sửa hàm `toRoomData` bên dưới.
- */
-export interface RoomData {
-  id: number;
-  name: string;          // tên camera (nếu có) hoặc tên phòng
-  room: string;          // tên phòng — "Phòng 101"
-  className: string;
-  students: number;
-  present: number;
-  absent: number;
-  floor: string;
-  building: string;
-  supervisor: string;
-  status: string;        // label hiển thị
-  statusType?: "live" | "ended";
-  startTime: string;     // hiển thị dạng vi-VN
-  endTime: string;
-  image: string;
-  video: string;
-  notes?: string;
-  roomStatus: RoomStatus;
-}
-
-export type RoomStatusType = RoomStatus;
+export type { RoomData, RoomStatusType } from "@/data/rooms";
+export { statusOrder } from "@/data/rooms";
 
 const formatVN = (iso: string) => {
   if (!iso) return "";
@@ -46,8 +21,6 @@ const statusLabel: Record<RoomStatus, string> = {
   upcoming: "Chưa diễn ra",
 };
 
-export const statusOrder: Record<RoomStatus, number> = { live: 0, ended: 1, upcoming: 2 };
-
 const toRoomData = (room: Room, cam?: Camera): RoomData => ({
   id: room.id,
   name: cam?.name ?? room.name,
@@ -63,6 +36,8 @@ const toRoomData = (room: Room, cam?: Camera): RoomData => ({
   statusType: room.status === "ended" ? "ended" : "live",
   startTime: formatVN(room.startTime),
   endTime: formatVN(room.endTime),
+  startTimeIso: room.startTime,
+  endTimeIso: room.endTime,
   image: "",
   video: cam?.video ?? "",
   notes: cam?.note,
@@ -70,13 +45,19 @@ const toRoomData = (room: Room, cam?: Camera): RoomData => ({
 });
 
 let store: RoomData[] = [];
+let rawRooms: Room[] = [];
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 
+/**
+ * BACKEND CALL: GET /rooms + GET /cameras
+ * Tải lại toàn bộ danh sách phòng + camera, ghép thành view-model UI dùng.
+ */
 const refresh = async () => {
-  const [rooms, cams] = await Promise.all([roomsApi.list(), camerasApi.list()]);
+  const [roomsRes, cams] = await Promise.all([roomsApi.list(), camerasApi.list()]);
+  rawRooms = roomsRes;
   const camById = new Map(cams.map((c) => [c.room_id, c]));
-  store = rooms.map((r) => toRoomData(r, camById.get(r.id)));
+  store = roomsRes.map((r) => toRoomData(r, camById.get(r.id)));
   emit();
 };
 
@@ -84,48 +65,97 @@ const refresh = async () => {
 refresh().catch((err) => console.error("Failed to load rooms", err));
 
 export const getRooms = () => store;
+export const getRawRooms = () => rawRooms;
 
-export const addRoom = async (data: Partial<RoomData> & { roomStatus: RoomStatus }) => {
-  // Convert vi-VN datetime back if needed; the form đã dùng datetime-local nên giữ nguyên ISO khi gọi API.
+/**
+ * Tạo phòng thi mới.
+ * BACKEND CALL: POST /rooms { ... status: "upcoming" }
+ * Theo nghiệp vụ: phòng mới luôn ở trạng thái "upcoming".
+ */
+export const addRoom = async (
+  data: Omit<RoomData, "id" | "status" | "statusType" | "startTime" | "endTime" | "image" | "video" | "notes" | "name" | "room" | "startTimeIso" | "endTimeIso"> & {
+    room: string;
+    startTime: string; // ISO từ datetime-local
+    endTime: string;
+  },
+) => {
   const created = await roomsApi.create({
-    name: data.room ?? "Phòng mới",
-    class_name: data.className ?? "",
-    floor: data.floor ?? "",
-    building: data.building ?? "",
-    total_students: data.students ?? 0,
-    present: data.present ?? 0,
-    absent: data.absent ?? 0,
-    status: data.roomStatus,
-    startTime: data.startTime ?? new Date().toISOString(),
-    endTime: data.endTime ?? new Date().toISOString(),
+    name: data.room,
+    class_name: data.className,
+    floor: data.floor,
+    building: data.building,
+    total_students: data.students,
+    present: data.present,
+    absent: data.absent,
+    status: "upcoming", // mặc định khi tạo
+    startTime: data.startTime,
+    endTime: data.endTime,
     cam_id: null,
-    supervisor: data.supervisor ?? "",
+    supervisor: data.supervisor,
   });
+  rawRooms = [...rawRooms, created];
   store = [...store, toRoomData(created)];
   emit();
   return created;
 };
 
-export const updateRoom = async (id: number, patch: Partial<RoomData>) => {
-  // Optimistic local patch
-  store = store.map((r) => (r.id === id ? { ...r, ...patch } : r));
-  emit();
-  // Best-effort sync (mapping minimal fields)
+/**
+ * Cập nhật phòng (sửa thông tin hoặc đổi status).
+ * BACKEND CALL: PATCH /rooms/:id
+ */
+export const updateRoom = async (id: number, patch: Partial<RoomData> & { roomStatus?: RoomStatusType }) => {
+  // Build payload đúng schema BE
+  const payload: Partial<Room> = {
+    ...(patch.room !== undefined && { name: patch.room }),
+    ...(patch.className !== undefined && { class_name: patch.className }),
+    ...(patch.floor !== undefined && { floor: patch.floor }),
+    ...(patch.building !== undefined && { building: patch.building }),
+    ...(patch.students !== undefined && { total_students: patch.students }),
+    ...(patch.present !== undefined && { present: patch.present }),
+    ...(patch.absent !== undefined && { absent: patch.absent }),
+    ...(patch.supervisor !== undefined && { supervisor: patch.supervisor }),
+    ...(patch.startTimeIso !== undefined && { startTime: patch.startTimeIso }),
+    ...(patch.endTimeIso !== undefined && { endTime: patch.endTimeIso }),
+    ...(patch.roomStatus && { status: patch.roomStatus }),
+  };
   try {
-    await roomsApi.update(id, {
-      ...(patch.room && { name: patch.room }),
-      ...(patch.className && { class_name: patch.className }),
-      ...(patch.present !== undefined && { present: patch.present }),
-      ...(patch.absent !== undefined && { absent: patch.absent }),
-      ...(patch.roomStatus && { status: patch.roomStatus }),
-    });
+    const updated = await roomsApi.update(id, payload);
+    rawRooms = rawRooms.map((r) => (r.id === id ? updated : r));
+    // Re-derive view-model giữ camera link
+    await refresh();
   } catch (err) {
     console.error("updateRoom failed", err);
+    throw err;
   }
 };
 
+/** BACKEND CALL: PATCH /rooms/:id chỉ đổi status (không refetch full list). */
+export const setRoomStatus = async (id: number, status: RoomStatusType) => {
+  try {
+    await roomsApi.update(id, { status });
+    rawRooms = rawRooms.map((r) => (r.id === id ? { ...r, status } : r));
+    store = store.map((r) =>
+      r.id === id
+        ? {
+            ...r,
+            roomStatus: status,
+            status: statusLabel[status],
+            statusType: status === "ended" ? "ended" : "live",
+          }
+        : r,
+    );
+    emit();
+  } catch (err) {
+    console.error("setRoomStatus failed", err);
+  }
+};
+
+/**
+ * BACKEND CALL: DELETE /rooms/:id
+ */
 export const removeRoom = async (id: number) => {
   store = store.filter((r) => r.id !== id);
+  rawRooms = rawRooms.filter((r) => r.id !== id);
   emit();
   try {
     await roomsApi.remove(id);
@@ -145,6 +175,3 @@ export const useRoomsStore = (): RoomData[] => {
   }, []);
   return store;
 };
-
-// Re-export để các trang import từ đây nếu cần
-export { mockCameras };

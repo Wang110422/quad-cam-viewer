@@ -16,7 +16,7 @@ const CameraGrid = ({ cameras, selectedId, onSelect }: CameraGridProps) => {
     <div className="grid grid-cols-2 gap-4">
       {cameras.map((cam) => {
         const syncState = getState(cam.id);
-        const isEnded = syncState?.isEnded ?? cam.statusType === "ended";
+        const isEnded = syncState?.isEnded ?? false;
 
         return (
         <div

@@ -1,44 +1,32 @@
-// Legacy shim — đọc qua mock; production sẽ thay bằng API.
-import { mockRooms } from "@/data/mock/rooms.mock";
-import { cameras, type CameraData } from "@/data/cameras";
+// Legacy types — dùng lại bởi RoomsPage / StatisticsPage / ReportsPage.
+// Dữ liệu thật đến từ src/data/roomsStore.ts (gọi roomsApi qua axios).
 
 export type RoomStatusType = "live" | "ended" | "upcoming";
 
-export interface RoomData extends CameraData {
+export interface RoomData {
+  id: number;
+  name: string;          // tên camera (nếu có) hoặc tên phòng
+  room: string;          // tên phòng — VD "Phòng 101"
+  className: string;
+  students: number;
+  present: number;
+  absent: number;
+  floor: string;
+  building: string;
+  supervisor: string;
+  status: string;        // label hiển thị (vi-VN)
+  statusType?: "live" | "ended";
+  startTime: string;     // hiển thị dạng vi-VN
+  endTime: string;
+  startTimeIso: string;  // ISO gốc, dùng cho form sửa phòng
+  endTimeIso: string;
+  image: string;
+  video: string;
+  notes?: string;
   roomStatus: RoomStatusType;
 }
 
-const formatVN = (iso: string) => {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime())
-    ? iso
-    : new Intl.DateTimeFormat("vi-VN", {
-        day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
-      }).format(d);
-};
-
-export const rooms: RoomData[] = mockRooms.map((r) => {
-  const cam = cameras.find((c) => c.room === r.name);
-  return {
-    id: r.id,
-    name: cam?.name ?? r.name,
-    room: r.name,
-    className: r.class_name,
-    students: r.total_students,
-    present: r.present,
-    absent: r.absent,
-    floor: r.floor,
-    building: r.building,
-    supervisor: r.supervisor,
-    status: r.status === "ended" ? "Đã kết thúc" : r.status === "upcoming" ? "Chưa diễn ra" : "Đang hoạt động",
-    statusType: r.status === "ended" ? "ended" : "live",
-    startTime: formatVN(r.startTime),
-    endTime: formatVN(r.endTime),
-    image: cam?.image ?? "",
-    video: cam?.video ?? "",
-    notes: cam?.notes,
-    roomStatus: r.status,
-  };
-});
-
 export const statusOrder: Record<RoomStatusType, number> = { live: 0, ended: 1, upcoming: 2 };
+
+// Snapshot tĩnh không còn dùng — giữ export để các import cũ không vỡ.
+export const rooms: RoomData[] = [];

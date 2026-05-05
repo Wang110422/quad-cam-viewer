@@ -1,6 +1,6 @@
 import { useState } from "react";
 import AppSidebar from "@/components/AppSidebar";
-import { supervisors as initial, type Supervisor } from "@/data/supervisors";
+import { useSupervisorsStore, addSupervisor, removeSupervisor } from "@/data/supervisorsStore";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,27 +14,29 @@ import { Plus, Mail, Phone, MapPin, Briefcase, Trash2 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
 const SupervisorsPage = () => {
-  const [list, setList] = useState<Supervisor[]>(initial);
+  const list = useSupervisorsStore();
   const [open, setOpen] = useState(false);
   const { toast } = useToast();
 
-  const handleAdd = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleAdd = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    const next: Supervisor = {
-      id: Math.max(0, ...list.map((s) => s.id)) + 1,
-      name: String(fd.get("name") || ""),
-      email: String(fd.get("email") || ""),
-      phone: String(fd.get("phone") || ""),
-      gender: (fd.get("gender") as "Nam" | "Nữ") || "Nam",
-      dob: String(fd.get("dob") || ""),
-      address: String(fd.get("address") || ""),
-      department: String(fd.get("department") || ""),
-      assignedRoom: null,
-    };
-    setList((p) => [...p, next]);
-    setOpen(false);
-    toast({ title: "Đã thêm giám thị", description: next.name });
+    try {
+      const created = await addSupervisor({
+        name: String(fd.get("name") || ""),
+        email: String(fd.get("email") || ""),
+        phone: String(fd.get("phone") || ""),
+        gender: (fd.get("gender") as "Nam" | "Nữ") || "Nam",
+        dob: String(fd.get("dob") || ""),
+        address: String(fd.get("address") || ""),
+        department: String(fd.get("department") || ""),
+        assignedRoom: null,
+      });
+      setOpen(false);
+      toast({ title: "Đã thêm giám thị", description: created.name });
+    } catch {
+      toast({ title: "Không thể thêm giám thị" });
+    }
   };
 
   return (
@@ -96,9 +98,9 @@ const SupervisorsPage = () => {
                       variant="ghost"
                       size="icon"
                       className="text-destructive hover:text-destructive h-8 w-8"
-                      onClick={() => {
+                      onClick={async () => {
                         if (confirm(`Xóa giám thị ${s.name}?`)) {
-                          setList((p) => p.filter((x) => x.id !== s.id));
+                          await removeSupervisor(s.id);
                           toast({ title: "Đã xóa giám thị", description: s.name });
                         }
                       }}

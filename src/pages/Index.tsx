@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { cameras, type CameraData } from "@/data/cameras";
+import { useEffect, useMemo, useState } from "react";
+import type { CameraData } from "@/data/cameras";
 import AppSidebar from "@/components/AppSidebar";
 import CameraGrid from "@/components/CameraGrid";
 import CameraDetail from "@/components/CameraDetail";
@@ -8,32 +8,63 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { Calendar, Clock, Bell, Plus } from "lucide-react";
 import { CameraSyncProvider } from "@/contexts/CameraSyncContext";
-import { useRoomsStore } from "@/data/roomsStore";
+import { useRoomsStore, setRoomStatus, getRawRooms } from "@/data/roomsStore";
+import { camerasApi } from "@/api";
 
 const Index = () => {
   const { toast } = useToast();
   const rooms = useRoomsStore();
-  const [cameraList, setCameraList] = useState<CameraData[]>(cameras);
+  const [cameraList, setCameraList] = useState<CameraData[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<number | null>(null);
   const [isCreateDialogOpen, setCreateDialogOpen] = useState(false);
   const [editingCamera, setEditingCamera] = useState<CameraData | null>(null);
 
+  // BACKEND CALL: GET /cameras — load camera list khi mount
+  useEffect(() => {
+    camerasApi
+      .list()
+      .then((cams) => {
+        const raw = getRawRooms();
+        const mapped: CameraData[] = cams.map((c) => {
+          const room = raw.find((r) => r.id === c.room_id);
+          return {
+            id: c.id,
+            name: c.name,
+            roomId: c.room_id,
+            room: room?.name ?? "",
+            className: room?.class_name ?? "",
+            students: room?.total_students ?? 0,
+            present: room?.present ?? 0,
+            absent: room?.absent ?? 0,
+            floor: room?.floor ?? "",
+            building: room?.building ?? "",
+            supervisor: room?.supervisor ?? "",
+            startTime: room?.startTime ?? "",
+            endTime: room?.endTime ?? "",
+            image: "",
+            video: c.video,
+            notes: c.note,
+          };
+        });
+        setCameraList(mapped);
+      })
+      .catch((err) => console.error("Failed to load cameras", err));
+  }, []);
+
   const selectedCamera = cameraList.find((c) => c.id === selectedCameraId) || null;
-  const nextCameraId = useMemo(() => Math.max(0, ...cameraList.map((c) => c.id)) + 1, [cameraList]);
 
   const handleVideoEnded = (cameraId: number) => {
-    setCameraList((prev) =>
-      prev.map((c) => (c.id === cameraId ? { ...c, status: "Phòng thi đã kết thúc", statusType: "ended" } : c)),
-    );
+    // Khi video phát hết -> phòng tương ứng chuyển status "ended"
+    const cam = cameraList.find((c) => c.id === cameraId);
+    if (cam) setRoomStatus(cam.roomId, "ended");
   };
 
-  const buildCameraFromRoom = (id: number, values: CameraFormValues): CameraData | null => {
+  const buildCameraPayload = (values: CameraFormValues, video: string): Omit<CameraData, "id"> | null => {
     const room = rooms.find((r) => r.id === values.roomId);
     if (!room) return null;
-    const fallbackImage = cameraList[0]?.image ?? room.image ?? "";
     return {
-      id,
       name: values.name.trim(),
+      roomId: room.id,
       room: room.room,
       className: room.className,
       students: room.students,
@@ -42,62 +73,124 @@ const Index = () => {
       floor: room.floor,
       building: room.building,
       supervisor: room.supervisor,
-      status: "Đang hoạt động",
-      statusType: "live",
       startTime: room.startTime,
       endTime: room.endTime,
-      image: fallbackImage,
-      video: values.videoFile ? URL.createObjectURL(values.videoFile) : "",
+      image: "",
+      video,
       notes: values.notes.trim(),
     };
   };
 
-  const handleAddCamera = (values: CameraFormValues) => {
-    const next = buildCameraFromRoom(nextCameraId, values);
-    if (!next) return;
-    setCameraList((prev) => [...prev, next]);
-    setSelectedCameraId(next.id);
-    setCreateDialogOpen(false);
-    toast({ title: "Đã thêm camera", description: `${next.name} đã được thêm.` });
+  const handleAddCamera = async (values: CameraFormValues) => {
+    if (!values.roomId) return;
+    const videoUrl = values.videoFile ? URL.createObjectURL(values.videoFile) : "";
+
+    try {
+      // BACKEND CALL: POST /cameras
+      const created = await camerasApi.create({
+        name: values.name.trim(),
+        room_id: values.roomId,
+        note: values.notes.trim(),
+        video: videoUrl,
+      });
+
+      // Optionally upload file thật:
+      // if (values.videoFile) await camerasApi.uploadVideo(created.id, values.videoFile);
+
+      const payload = buildCameraPayload(values, videoUrl);
+      if (!payload) return;
+      const newCam: CameraData = { ...payload, id: created.id };
+
+      setCameraList((prev) => [...prev, newCam]);
+      setSelectedCameraId(created.id);
+      setCreateDialogOpen(false);
+      toast({ title: "Đã thêm camera", description: `${newCam.name} đã được thêm.` });
+
+      // Nghiệp vụ trạng thái phòng:
+      // - Phòng vừa gắn camera -> "live"
+      // - Nếu phòng đó đang "ended" thì coi như khởi động lại -> cũng "live"
+      await setRoomStatus(values.roomId, "live");
+    } catch (err) {
+      console.error(err);
+      toast({ title: "Không thể tạo camera" });
+    }
   };
 
-  const handleEditCamera = (values: CameraFormValues) => {
-    if (!editingCamera) return;
+  const handleEditCamera = async (values: CameraFormValues) => {
+    if (!editingCamera || !values.roomId) return;
     const room = rooms.find((r) => r.id === values.roomId);
     if (!room) return;
-    setCameraList((prev) =>
-      prev.map((c) => {
-        if (c.id !== editingCamera.id) return c;
-        const nextVideo = values.videoFile ? URL.createObjectURL(values.videoFile) : c.video;
-        return {
-          ...c,
-          name: values.name.trim(),
-          room: room.room,
-          className: room.className,
-          students: room.students,
-          present: room.present,
-          absent: room.absent,
-          floor: room.floor,
-          building: room.building,
-          supervisor: room.supervisor,
-          startTime: room.startTime,
-          endTime: room.endTime,
-          notes: values.notes.trim(),
-          video: nextVideo,
-        };
-      }),
-    );
-    setEditingCamera(null);
-    toast({ title: "Đã cập nhật camera" });
+
+    const previousRoomId = editingCamera.roomId;
+    const previousRoomStatus = rooms.find((r) => r.id === previousRoomId)?.roomStatus;
+    const newVideo = values.videoFile ? URL.createObjectURL(values.videoFile) : editingCamera.video;
+
+    try {
+      // BACKEND CALL: PATCH /cameras/:id
+      await camerasApi.update(editingCamera.id, {
+        name: values.name.trim(),
+        room_id: room.id,
+        note: values.notes.trim(),
+        video: newVideo,
+      });
+
+      setCameraList((prev) =>
+        prev.map((c) =>
+          c.id !== editingCamera.id
+            ? c
+            : {
+                ...c,
+                name: values.name.trim(),
+                roomId: room.id,
+                room: room.room,
+                className: room.className,
+                students: room.students,
+                present: room.present,
+                absent: room.absent,
+                floor: room.floor,
+                building: room.building,
+                supervisor: room.supervisor,
+                startTime: room.startTime,
+                endTime: room.endTime,
+                notes: values.notes.trim(),
+                video: newVideo,
+              },
+        ),
+      );
+
+      // Nếu camera chuyển sang phòng KHÁC mà phòng cũ đang "ended" -> phòng cũ về "upcoming"
+      if (previousRoomId !== room.id && previousRoomStatus === "ended") {
+        await setRoomStatus(previousRoomId, "upcoming");
+      }
+      // Phòng mới có camera -> "live"
+      await setRoomStatus(room.id, "live");
+
+      setEditingCamera(null);
+      toast({ title: "Đã cập nhật camera" });
+    } catch (err) {
+      console.error(err);
+      toast({ title: "Không thể cập nhật camera" });
+    }
   };
 
-  const handleDeleteRoom = (cameraId: number) => {
-    setCameraList((prev) => prev.filter((c) => c.id !== cameraId));
-    if (selectedCameraId === cameraId) setSelectedCameraId(null);
-    toast({ title: "Đã xóa camera" });
+  const handleDeleteRoom = async (cameraId: number) => {
+    const cam = cameraList.find((c) => c.id === cameraId);
+    try {
+      // BACKEND CALL: DELETE /cameras/:id
+      await camerasApi.remove(cameraId);
+      setCameraList((prev) => prev.filter((c) => c.id !== cameraId));
+      if (selectedCameraId === cameraId) setSelectedCameraId(null);
+      // Phòng mất camera -> về "upcoming"
+      if (cam) await setRoomStatus(cam.roomId, "upcoming");
+      toast({ title: "Đã xóa camera" });
+    } catch (err) {
+      console.error(err);
+      toast({ title: "Không thể xóa camera" });
+    }
   };
 
   const handleExportRoom = (camera: CameraData) => {
+    const linked = rooms.find((r) => r.id === camera.roomId);
     const rows = [
       ["Tên camera", camera.name],
       ["Lớp", camera.className],
@@ -110,7 +203,7 @@ const Index = () => {
       ["Tòa nhà", camera.building],
       ["Bắt đầu", camera.startTime],
       ["Kết thúc", camera.endTime],
-      ["Trạng thái", camera.status],
+      ["Trạng thái phòng", linked?.status ?? ""],
       ["Ghi chú", camera.notes ?? ""],
     ];
     const escape = (t: string) => t.replace(/"/g, '""');
@@ -119,7 +212,7 @@ const Index = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${camera.room.toLowerCase().replace(/\s+/g, "-")}.csv`;
+    link.download = `${(camera.room || "camera").toLowerCase().replace(/\s+/g, "-")}.csv`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -127,9 +220,7 @@ const Index = () => {
     toast({ title: "Đã xuất file" });
   };
 
-  const editingRoomId = editingCamera
-    ? rooms.find((r) => r.room === editingCamera.room)?.id ?? null
-    : null;
+  const editingRoomId = editingCamera?.roomId ?? null;
 
   return (
     <CameraSyncProvider>

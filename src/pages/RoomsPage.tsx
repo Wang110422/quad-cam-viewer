@@ -1,14 +1,13 @@
 import { useMemo, useState } from "react";
-import { statusOrder, type RoomStatusType } from "@/data/rooms";
-import { useRoomsStore, addRoom, removeRoom } from "@/data/roomsStore";
+import { statusOrder, type RoomStatusType, type RoomData } from "@/data/rooms";
+import { useRoomsStore, addRoom, removeRoom, updateRoom } from "@/data/roomsStore";
 import AppSidebar from "@/components/AppSidebar";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Building2, DoorOpen, Eye, Plus, Trash2, Users } from "lucide-react";
+import { Building2, DoorOpen, Eye, Pencil, Plus, Trash2, Users } from "lucide-react";
 import RoomFormDialog, { type RoomFormValues } from "@/components/RoomFormDialog";
 import { useToast } from "@/components/ui/use-toast";
-import { cameras } from "@/data/cameras";
 
 const statusLabel: Record<RoomStatusType, string> = {
   live: "Đang diễn ra",
@@ -22,19 +21,11 @@ const dotClass: Record<RoomStatusType, string> = {
   upcoming: "bg-white border border-border",
 };
 
-const formatDateTime = (value: string) => {
-  if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return new Intl.DateTimeFormat("vi-VN", {
-    day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
-  }).format(d);
-};
-
 const RoomsPage = () => {
   const rooms = useRoomsStore();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<RoomData | null>(null);
 
   const sorted = useMemo(
     () => [...rooms].sort((a, b) => statusOrder[a.roomStatus] - statusOrder[b.roomStatus]),
@@ -42,21 +33,47 @@ const RoomsPage = () => {
   );
 
   const handleAdd = async (v: RoomFormValues) => {
-    await addRoom({
-      room: v.room,
-      className: v.className,
-      students: v.students,
-      present: v.present,
-      absent: v.absent,
-      floor: v.floor,
-      building: v.building,
-      supervisor: v.supervisor,
-      startTime: v.startTime, // ISO từ datetime-local
-      endTime: v.endTime,
-      roomStatus: "upcoming",
-    });
-    setOpen(false);
-    toast({ title: "Đã thêm phòng thi", description: `${v.room} đã được thêm.` });
+    try {
+      await addRoom({
+        room: v.room,
+        className: v.className,
+        students: v.students,
+        present: v.present,
+        absent: v.absent,
+        floor: v.floor,
+        building: v.building,
+        supervisor: v.supervisor,
+        startTime: v.startTime, // ISO từ datetime-local
+        endTime: v.endTime,
+        roomStatus: "upcoming",
+      });
+      setOpen(false);
+      toast({ title: "Đã thêm phòng thi", description: `${v.room} đã được thêm.` });
+    } catch {
+      toast({ title: "Không thể thêm phòng thi" });
+    }
+  };
+
+  const handleEdit = async (v: RoomFormValues) => {
+    if (!editing) return;
+    try {
+      await updateRoom(editing.id, {
+        room: v.room,
+        className: v.className,
+        students: v.students,
+        present: v.present,
+        absent: v.absent,
+        floor: v.floor,
+        building: v.building,
+        supervisor: v.supervisor,
+        startTimeIso: v.startTime,
+        endTimeIso: v.endTime,
+      });
+      setEditing(null);
+      toast({ title: "Đã cập nhật phòng thi", description: v.room });
+    } catch {
+      toast({ title: "Không thể cập nhật phòng thi" });
+    }
   };
 
   return (
@@ -73,6 +90,9 @@ const RoomsPage = () => {
           </Button>
         </header>
         <div className="flex-1 overflow-auto p-6 space-y-3">
+          {sorted.length === 0 && (
+            <div className="text-sm text-muted-foreground italic">Chưa có phòng thi.</div>
+          )}
           {sorted.map((r) => (
             <Card key={r.id} className="p-4 flex flex-wrap items-center gap-4">
               <span className={`w-3 h-3 rounded-full shrink-0 ${dotClass[r.roomStatus]}`} />
@@ -106,6 +126,9 @@ const RoomsPage = () => {
                   <div className="text-sm text-muted-foreground italic">—</div>
                 )}
                 <Badge variant="outline">{statusLabel[r.roomStatus]}</Badge>
+                <Button variant="ghost" size="icon" onClick={() => setEditing(r)}>
+                  <Pencil className="w-4 h-4" />
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -130,8 +153,34 @@ const RoomsPage = () => {
         onOpenChange={setOpen}
         onSubmit={handleAdd}
         title="Thêm phòng thi"
-        description="Điền thông tin phòng thi. Giám thị có thể chọn từ danh sách giám thị có sẵn."
+        description="Phòng mới sẽ ở trạng thái 'Chưa diễn ra' cho đến khi gắn camera."
         submitLabel="Tạo phòng thi"
+      />
+
+      <RoomFormDialog
+        open={Boolean(editing)}
+        onOpenChange={(o) => !o && setEditing(null)}
+        onSubmit={handleEdit}
+        title="Sửa phòng thi"
+        description="Cập nhật thông tin phòng thi."
+        submitLabel="Lưu thay đổi"
+        initialValues={
+          editing
+            ? {
+                room: editing.room,
+                className: editing.className,
+                students: editing.students,
+                present: editing.present,
+                absent: editing.absent,
+                floor: editing.floor,
+                building: editing.building,
+                supervisor: editing.supervisor,
+                // Convert ISO -> datetime-local "YYYY-MM-DDTHH:mm"
+                startTime: editing.startTimeIso?.slice(0, 16) ?? "",
+                endTime: editing.endTimeIso?.slice(0, 16) ?? "",
+              }
+            : undefined
+        }
       />
     </div>
   );

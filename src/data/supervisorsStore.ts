@@ -27,8 +27,27 @@ export const addSupervisor = async (payload: Omit<Supervisor, "id">) => {
   return created;
 };
 
-/** BACKEND CALL: DELETE /supervisors/:id */
+/** BACKEND CALL: PATCH /supervisors/:id */
+export const updateSupervisor = async (id: number, patch: Partial<Omit<Supervisor, "id">>) => {
+  try {
+    const updated = await supervisorsApi.update(id, patch);
+    store = store.map((s) => (s.id === id ? updated : s));
+    emit();
+    return updated;
+  } catch (err) {
+    console.error("updateSupervisor failed", err);
+    throw err;
+  }
+};
+
+/** BACKEND CALL: DELETE /supervisors/:id
+ *  Nghiệp vụ: KHÔNG xóa giám thị đang trực phòng (assignedRoom != null).
+ */
 export const removeSupervisor = async (id: number) => {
+  const target = store.find((s) => s.id === id);
+  if (target?.assignedRoom) {
+    throw new Error("Không thể xóa giám thị đang trực phòng thi");
+  }
   store = store.filter((s) => s.id !== id);
   emit();
   try {

@@ -316,7 +316,7 @@ const CameraTile = ({
           autoPlay={isMaster && !isLoading}
           // Cả 2 đều KHÔNG loop – để onEnded chạy đúng và đồng bộ ended
           loop={false}
-          controls={showControls && isMaster}
+          controls={showControls && isMaster && (syncState?.firstRunDone ?? false)}
           onLoadedMetadata={() => {
             const v = videoRef.current;
             if (!v || isLoading) return;

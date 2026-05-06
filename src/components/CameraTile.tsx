@@ -33,9 +33,9 @@ const CameraTile = ({
   const initiallyEnded = false; // Camera không có status — trạng thái lấy từ Room.
   const isMaster = size === "large";
 
-  const { getState, ensureCamera, version, emitPlay, emitPause, emitSeek, emitEnded, emitHeartbeat } = useCameraSync();
+  const { getState, ensureCamera, version, emitPlay, emitPause, emitSeek, emitEnded, emitHeartbeat, recordAiFrame } = useCameraSync();
 
-  ensureCamera(camera.id, camera.video, initiallyEnded);
+  ensureCamera(camera.id, camera.video, initiallyEnded, camera.roomId);
   const syncState = getState(camera.id);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);

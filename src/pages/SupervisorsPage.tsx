@@ -1,6 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import AppSidebar from "@/components/AppSidebar";
-import { useSupervisorsStore, addSupervisor, removeSupervisor } from "@/data/supervisorsStore";
+import {
+  useSupervisorsStore,
+  addSupervisor,
+  removeSupervisor,
+  updateSupervisor,
+} from "@/data/supervisorsStore";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,12 +15,14 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, Mail, Phone, MapPin, Briefcase, Trash2 } from "lucide-react";
+import { Plus, Mail, Phone, MapPin, Briefcase, Trash2, Pencil } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
+import type { Supervisor } from "@/types/models";
 
 const SupervisorsPage = () => {
   const list = useSupervisorsStore();
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<Supervisor | null>(null);
   const { toast } = useToast();
 
   const handleAdd = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -36,6 +43,27 @@ const SupervisorsPage = () => {
       toast({ title: "Đã thêm giám thị", description: created.name });
     } catch {
       toast({ title: "Không thể thêm giám thị" });
+    }
+  };
+
+  const handleEdit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editing) return;
+    const fd = new FormData(e.currentTarget);
+    try {
+      await updateSupervisor(editing.id, {
+        name: String(fd.get("name") || ""),
+        email: String(fd.get("email") || ""),
+        phone: String(fd.get("phone") || ""),
+        gender: (fd.get("gender") as "Nam" | "Nữ") || "Nam",
+        dob: String(fd.get("dob") || ""),
+        address: String(fd.get("address") || ""),
+        department: String(fd.get("department") || ""),
+      });
+      setEditing(null);
+      toast({ title: "Đã cập nhật giám thị" });
+    } catch {
+      toast({ title: "Không thể cập nhật giám thị" });
     }
   };
 
@@ -90,18 +118,36 @@ const SupervisorsPage = () => {
                       <div className="text-xs text-muted-foreground">{s.gender} • {s.dob}</div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     <Badge variant={working ? "default" : "secondary"}>
                       {working ? `Đang trực ${s.assignedRoom}` : "Trống"}
                     </Badge>
                     <Button
                       variant="ghost"
                       size="icon"
+                      className="h-8 w-8"
+                      title="Sửa giám thị"
+                      onClick={() => setEditing(s)}
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      disabled={working}
+                      title={working ? "Không thể xóa giám thị đang trực" : "Xóa giám thị"}
                       className="text-destructive hover:text-destructive h-8 w-8"
                       onClick={async () => {
-                        if (confirm(`Xóa giám thị ${s.name}?`)) {
+                        if (working) {
+                          toast({ title: "Không thể xóa", description: "Giám thị đang trực phòng thi." });
+                          return;
+                        }
+                        if (!confirm(`Xóa giám thị ${s.name}?`)) return;
+                        try {
                           await removeSupervisor(s.id);
                           toast({ title: "Đã xóa giám thị", description: s.name });
+                        } catch (err) {
+                          toast({ title: "Không thể xóa", description: (err as Error).message });
                         }
                       }}
                     >
@@ -120,6 +166,37 @@ const SupervisorsPage = () => {
           })}
         </div>
       </main>
+
+      {/* Dialog SỬA giám thị */}
+      <Dialog open={Boolean(editing)} onOpenChange={(o) => !o && setEditing(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Sửa giám thị</DialogTitle>
+            <DialogDescription>Cập nhật thông tin giám thị.</DialogDescription>
+          </DialogHeader>
+          {editing && (
+            <form onSubmit={handleEdit} className="space-y-3" key={editing.id}>
+              <div className="grid grid-cols-2 gap-3">
+                <div><Label>Họ tên</Label><Input name="name" defaultValue={editing.name} required /></div>
+                <div><Label>Giới tính</Label>
+                  <select name="gender" defaultValue={editing.gender} className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm">
+                    <option>Nam</option><option>Nữ</option>
+                  </select>
+                </div>
+                <div><Label>Email</Label><Input name="email" type="email" defaultValue={editing.email} required /></div>
+                <div><Label>Số điện thoại</Label><Input name="phone" defaultValue={editing.phone} required /></div>
+                <div><Label>Ngày sinh</Label><Input name="dob" type="date" defaultValue={editing.dob} /></div>
+                <div><Label>Khoa/Bộ môn</Label><Input name="department" defaultValue={editing.department} /></div>
+              </div>
+              <div><Label>Địa chỉ</Label><Textarea name="address" rows={2} defaultValue={editing.address} /></div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setEditing(null)}>Hủy</Button>
+                <Button type="submit">Lưu thay đổi</Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

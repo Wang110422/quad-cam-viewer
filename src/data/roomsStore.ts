@@ -152,8 +152,13 @@ export const setRoomStatus = async (id: number, status: RoomStatusType) => {
 
 /**
  * BACKEND CALL: DELETE /rooms/:id
+ * Nghiệp vụ: KHÔNG xóa phòng đang diễn ra (status === "live").
  */
 export const removeRoom = async (id: number) => {
+  const target = rawRooms.find((r) => r.id === id);
+  if (target?.status === "live") {
+    throw new Error("Không thể xóa phòng thi đang diễn ra");
+  }
   store = store.filter((r) => r.id !== id);
   rawRooms = rawRooms.filter((r) => r.id !== id);
   emit();

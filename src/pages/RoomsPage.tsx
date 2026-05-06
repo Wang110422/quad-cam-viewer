@@ -133,10 +133,19 @@ const RoomsPage = () => {
                   variant="ghost"
                   size="icon"
                   className="text-destructive hover:text-destructive"
-                  onClick={() => {
-                    if (confirm(`Xóa ${r.room}?`)) {
-                      removeRoom(r.id);
+                  disabled={r.roomStatus === "live"}
+                  title={r.roomStatus === "live" ? "Không thể xóa phòng đang diễn ra" : "Xóa phòng thi"}
+                  onClick={async () => {
+                    if (r.roomStatus === "live") {
+                      toast({ title: "Không thể xóa", description: "Phòng thi đang diễn ra." });
+                      return;
+                    }
+                    if (!confirm(`Xóa ${r.room}?`)) return;
+                    try {
+                      await removeRoom(r.id);
                       toast({ title: "Đã xóa phòng thi", description: r.room });
+                    } catch (err) {
+                      toast({ title: "Không thể xóa", description: (err as Error).message });
                     }
                   }}
                 >

@@ -15,7 +15,7 @@ export const roomsApi = {
    */
   list: async (): Promise<Room[]> => {
     const { data } = await apiClient.get<Room[]>("/rooms");
-    return data;
+    return Array.isArray(data) ? data : [];
   },
 
   /**
@@ -35,7 +35,7 @@ export const roomsApi = {
    */
   listViolations: async (roomId: number): Promise<Violation[]> => {
     const { data } = await apiClient.get<Violation[]>(`/rooms/${roomId}/violations`);
-    return data;
+    return Array.isArray(data) ? data : [];
   },
 
   /**

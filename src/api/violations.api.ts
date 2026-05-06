@@ -12,7 +12,7 @@ export const violationsApi = {
    */
   list: async (params?: { room_id?: number }): Promise<Violation[]> => {
     const { data } = await apiClient.get<Violation[]>("/violations", { params });
-    return data;
+    return Array.isArray(data) ? data : [];
   },
 
   /**

@@ -11,7 +11,7 @@ export const supervisorsApi = {
    */
   list: async (): Promise<Supervisor[]> => {
     const { data } = await apiClient.get<Supervisor[]>("/supervisors");
-    return data;
+    return Array.isArray(data) ? data : [];
   },
 
   /**

@@ -12,7 +12,7 @@ export const camerasApi = {
    */
   list: async (): Promise<Camera[]> => {
     const { data } = await apiClient.get<Camera[]>("/cameras");
-    return data;
+    return Array.isArray(data) ? data : [];
   },
 
   /**

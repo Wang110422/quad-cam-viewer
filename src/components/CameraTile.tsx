@@ -195,6 +195,21 @@ const CameraTile = ({
     const results = aiResultsBuffer.current.get(currentTime);
     if (!results || !Array.isArray(results)) return;
 
+    // Master ghi nhận từng frame cho phát hiện vi phạm liên tục >5s
+    if (isMaster) {
+      const frameId = Math.floor(video.currentTime * 30);
+      recordAiFrame(
+        camera.id,
+        frameId,
+        video.currentTime,
+        results.map((r) => ({
+          id: r.id,
+          action: r.action,
+          confidence: Array.isArray(r.conf) && r.conf.length ? Math.max(...r.conf) : 1,
+        })),
+      );
+    }
+
     const scaleX = canvas.width / 1920;
     const scaleY = canvas.height / 1080;
 

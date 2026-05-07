@@ -48,6 +48,24 @@ class SocketService {
   getSocket() {
     return this.socket;
   }
+
+  /** Gửi 1 frame ảnh (base64) lên backend AI để nhận diện. */
+  emitFrame(frameData: string, id: number) {
+    if (this.socket?.connected) {
+      this.socket.emit("send_frame", { image: frameData, id });
+    }
+  }
+
+  /** Báo backend bắt đầu xử lý video cho camera vừa thêm/sửa. */
+  emitVideo(video_name: string, cam_id: number) {
+    // Đảm bảo có socket trước khi emit (trường hợp gọi trước khi tile mount)
+    if (!this.socket || this.socket.disconnected) {
+      this.connect();
+    }
+    const doEmit = () => this.socket?.emit("send_video", { video_name, camera_id: cam_id });
+    if (this.socket?.connected) doEmit();
+    else this.socket?.once("connect", doEmit);
+  }
 }
 
 export const socketService = new SocketService();

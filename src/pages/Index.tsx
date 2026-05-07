@@ -266,15 +266,25 @@ const Index = () => {
 
             <CameraGrid cameras={cameraList} selectedId={selectedCameraId} onSelect={setSelectedCameraId} />
             {selectedCamera && (
-              <CameraDetail
-                key={selectedCamera.id}
-                camera={selectedCamera}
-                onClose={() => setSelectedCameraId(null)}
-                onDelete={handleDeleteRoom}
-                onEdit={setEditingCamera}
-                onExport={handleExportRoom}
-                onVideoEnded={handleVideoEnded}
-              />
+              isProcessing ? (
+                <div className="flex items-center justify-center rounded-xl border border-border bg-card p-12">
+                  <div className="text-center space-y-4">
+                    <div className="mx-auto h-12 w-12 rounded-full border-4 border-primary/30 border-t-primary animate-spin" />
+                    <h3 className="text-lg font-semibold">ĐANG KHỞI TẠO AI</h3>
+                    <p className="text-sm text-muted-foreground">Vui lòng đợi 5 giây để đồng bộ dữ liệu...</p>
+                  </div>
+                </div>
+              ) : (
+                <CameraDetail
+                  key={selectedCamera.id}
+                  camera={selectedCamera}
+                  onClose={() => setSelectedCameraId(null)}
+                  onDelete={handleDeleteRoom}
+                  onEdit={setEditingCamera}
+                  onExport={handleExportRoom}
+                  onVideoEnded={handleVideoEnded}
+                />
+              )
             )}
           </div>
         </main>

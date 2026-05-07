@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { CameraData } from "@/data/cameras";
 import AppSidebar from "@/components/AppSidebar";
 import CameraGrid from "@/components/CameraGrid";
@@ -10,6 +10,7 @@ import { Calendar, Clock, Bell, Plus } from "lucide-react";
 import { CameraSyncProvider } from "@/contexts/CameraSyncContext";
 import { useRoomsStore, setRoomStatus, getRawRooms } from "@/data/roomsStore";
 import { camerasApi } from "@/api";
+import { socketService } from "@/services/socketServices";
 
 const Index = () => {
   const { toast } = useToast();
@@ -18,38 +19,50 @@ const Index = () => {
   const [selectedCameraId, setSelectedCameraId] = useState<number | null>(null);
   const [isCreateDialogOpen, setCreateDialogOpen] = useState(false);
   const [editingCamera, setEditingCamera] = useState<CameraData | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  // BACKEND CALL: GET /cameras — load camera list khi mount
-  useEffect(() => {
-    camerasApi
-      .list()
-      .then((cams) => {
-        const raw = getRawRooms();
-        const mapped: CameraData[] = cams.map((c) => {
-          const room = raw.find((r) => r.id === c.room_id);
-          return {
-            id: c.id,
-            name: c.name,
-            roomId: c.room_id,
-            room: room?.name ?? "",
-            className: room?.class_name ?? "",
-            students: room?.total_students ?? 0,
-            present: room?.present ?? 0,
-            absent: room?.absent ?? 0,
-            floor: room?.floor ?? "",
-            building: room?.building ?? "",
-            supervisor: room?.supervisor ?? "",
-            startTime: room?.startTime ?? "",
-            endTime: room?.endTime ?? "",
-            image: "",
-            video: c.video,
-            notes: c.note,
-          };
-        });
-        setCameraList(mapped);
-      })
-      .catch((err) => console.error("Failed to load cameras", err));
+  // BACKEND CALL: GET /cameras — load + ghép thông tin từ rooms.
+  const fetchCameras = useCallback(async () => {
+    try {
+      const cams = await camerasApi.list();
+      const raw = getRawRooms();
+      const mapped: CameraData[] = cams.map((c) => {
+        const room = raw.find((r) => r.id === c.room_id);
+        return {
+          id: c.id,
+          name: c.name,
+          roomId: c.room_id,
+          room: room?.name ?? "",
+          className: room?.class_name ?? "",
+          students: room?.total_students ?? 0,
+          present: room?.present ?? 0,
+          absent: room?.absent ?? 0,
+          floor: room?.floor ?? "",
+          building: room?.building ?? "",
+          supervisor: room?.supervisor ?? "",
+          startTime: room?.startTime ?? "",
+          endTime: room?.endTime ?? "",
+          image: "",
+          video: c.video,
+          notes: c.note,
+        };
+      });
+      setCameraList(mapped);
+    } catch (err) {
+      console.error("Failed to load cameras", err);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchCameras();
+  }, [fetchCameras]);
+
+  /** Hiện overlay "Đang khởi tạo AI" 5s và emit video sang backend AI. */
+  const runAiInit = (videoName: string, camId: number) => {
+    setIsProcessing(true);
+    socketService.emitVideo(videoName, camId);
+    setTimeout(() => setIsProcessing(false), 5000);
+  };
 
   const selectedCamera = cameraList.find((c) => c.id === selectedCameraId) || null;
 
@@ -101,15 +114,18 @@ const Index = () => {
       if (!payload) return;
       const newCam: CameraData = { ...payload, id: created.id };
 
-      setCameraList((prev) => [...prev, newCam]);
       setSelectedCameraId(created.id);
       setCreateDialogOpen(false);
       toast({ title: "Đã thêm camera", description: `${newCam.name} đã được thêm.` });
 
-      // Nghiệp vụ trạng thái phòng:
-      // - Phòng vừa gắn camera -> "live"
-      // - Nếu phòng đó đang "ended" thì coi như khởi động lại -> cũng "live"
+      // Nghiệp vụ trạng thái phòng: phòng có camera -> "live"
       await setRoomStatus(values.roomId, "live");
+
+      // Khởi tạo AI: emit video qua socket + hiển thị overlay 5s
+      runAiInit(values.videoFile?.name ?? newCam.name, created.id);
+
+      // Refresh dữ liệu sau khi thêm
+      await fetchCameras();
     } catch (err) {
       console.error(err);
       toast({ title: "Không thể tạo camera" });
@@ -134,30 +150,6 @@ const Index = () => {
         video: newVideo,
       });
 
-      setCameraList((prev) =>
-        prev.map((c) =>
-          c.id !== editingCamera.id
-            ? c
-            : {
-                ...c,
-                name: values.name.trim(),
-                roomId: room.id,
-                room: room.room,
-                className: room.className,
-                students: room.students,
-                present: room.present,
-                absent: room.absent,
-                floor: room.floor,
-                building: room.building,
-                supervisor: room.supervisor,
-                startTime: room.startTime,
-                endTime: room.endTime,
-                notes: values.notes.trim(),
-                video: newVideo,
-              },
-        ),
-      );
-
       // Nếu camera chuyển sang phòng KHÁC mà phòng cũ đang "ended" -> phòng cũ về "upcoming"
       if (previousRoomId !== room.id && previousRoomStatus === "ended") {
         await setRoomStatus(previousRoomId, "upcoming");
@@ -167,6 +159,14 @@ const Index = () => {
 
       setEditingCamera(null);
       toast({ title: "Đã cập nhật camera" });
+
+      // Nếu có thay video thì khởi tạo lại AI
+      if (values.videoFile) {
+        runAiInit(values.videoFile.name, editingCamera.id);
+      }
+
+      // Refresh dữ liệu sau khi sửa
+      await fetchCameras();
     } catch (err) {
       console.error(err);
       toast({ title: "Không thể cập nhật camera" });
@@ -183,6 +183,7 @@ const Index = () => {
       // Phòng mất camera -> về "upcoming"
       if (cam) await setRoomStatus(cam.roomId, "upcoming");
       toast({ title: "Đã xóa camera" });
+      await fetchCameras();
     } catch (err) {
       console.error(err);
       toast({ title: "Không thể xóa camera" });
@@ -265,15 +266,25 @@ const Index = () => {
 
             <CameraGrid cameras={cameraList} selectedId={selectedCameraId} onSelect={setSelectedCameraId} />
             {selectedCamera && (
-              <CameraDetail
-                key={selectedCamera.id}
-                camera={selectedCamera}
-                onClose={() => setSelectedCameraId(null)}
-                onDelete={handleDeleteRoom}
-                onEdit={setEditingCamera}
-                onExport={handleExportRoom}
-                onVideoEnded={handleVideoEnded}
-              />
+              isProcessing ? (
+                <div className="flex items-center justify-center rounded-xl border border-border bg-card p-12">
+                  <div className="text-center space-y-4">
+                    <div className="mx-auto h-12 w-12 rounded-full border-4 border-primary/30 border-t-primary animate-spin" />
+                    <h3 className="text-lg font-semibold">ĐANG KHỞI TẠO AI</h3>
+                    <p className="text-sm text-muted-foreground">Vui lòng đợi 5 giây để đồng bộ dữ liệu...</p>
+                  </div>
+                </div>
+              ) : (
+                <CameraDetail
+                  key={selectedCamera.id}
+                  camera={selectedCamera}
+                  onClose={() => setSelectedCameraId(null)}
+                  onDelete={handleDeleteRoom}
+                  onEdit={setEditingCamera}
+                  onExport={handleExportRoom}
+                  onVideoEnded={handleVideoEnded}
+                />
+              )
             )}
           </div>
         </main>

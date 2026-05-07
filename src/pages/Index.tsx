@@ -150,30 +150,6 @@ const Index = () => {
         video: newVideo,
       });
 
-      setCameraList((prev) =>
-        prev.map((c) =>
-          c.id !== editingCamera.id
-            ? c
-            : {
-                ...c,
-                name: values.name.trim(),
-                roomId: room.id,
-                room: room.room,
-                className: room.className,
-                students: room.students,
-                present: room.present,
-                absent: room.absent,
-                floor: room.floor,
-                building: room.building,
-                supervisor: room.supervisor,
-                startTime: room.startTime,
-                endTime: room.endTime,
-                notes: values.notes.trim(),
-                video: newVideo,
-              },
-        ),
-      );
-
       // Nếu camera chuyển sang phòng KHÁC mà phòng cũ đang "ended" -> phòng cũ về "upcoming"
       if (previousRoomId !== room.id && previousRoomStatus === "ended") {
         await setRoomStatus(previousRoomId, "upcoming");
@@ -183,6 +159,14 @@ const Index = () => {
 
       setEditingCamera(null);
       toast({ title: "Đã cập nhật camera" });
+
+      // Nếu có thay video thì khởi tạo lại AI
+      if (values.videoFile) {
+        runAiInit(values.videoFile.name, editingCamera.id);
+      }
+
+      // Refresh dữ liệu sau khi sửa
+      await fetchCameras();
     } catch (err) {
       console.error(err);
       toast({ title: "Không thể cập nhật camera" });

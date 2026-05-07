@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { CameraData } from "@/data/cameras";
 import AppSidebar from "@/components/AppSidebar";
 import CameraGrid from "@/components/CameraGrid";
@@ -10,6 +10,7 @@ import { Calendar, Clock, Bell, Plus } from "lucide-react";
 import { CameraSyncProvider } from "@/contexts/CameraSyncContext";
 import { useRoomsStore, setRoomStatus, getRawRooms } from "@/data/roomsStore";
 import { camerasApi } from "@/api";
+import { socketService } from "@/services/socketServices";
 
 const Index = () => {
   const { toast } = useToast();
@@ -18,38 +19,50 @@ const Index = () => {
   const [selectedCameraId, setSelectedCameraId] = useState<number | null>(null);
   const [isCreateDialogOpen, setCreateDialogOpen] = useState(false);
   const [editingCamera, setEditingCamera] = useState<CameraData | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  // BACKEND CALL: GET /cameras — load camera list khi mount
-  useEffect(() => {
-    camerasApi
-      .list()
-      .then((cams) => {
-        const raw = getRawRooms();
-        const mapped: CameraData[] = cams.map((c) => {
-          const room = raw.find((r) => r.id === c.room_id);
-          return {
-            id: c.id,
-            name: c.name,
-            roomId: c.room_id,
-            room: room?.name ?? "",
-            className: room?.class_name ?? "",
-            students: room?.total_students ?? 0,
-            present: room?.present ?? 0,
-            absent: room?.absent ?? 0,
-            floor: room?.floor ?? "",
-            building: room?.building ?? "",
-            supervisor: room?.supervisor ?? "",
-            startTime: room?.startTime ?? "",
-            endTime: room?.endTime ?? "",
-            image: "",
-            video: c.video,
-            notes: c.note,
-          };
-        });
-        setCameraList(mapped);
-      })
-      .catch((err) => console.error("Failed to load cameras", err));
+  // BACKEND CALL: GET /cameras — load + ghép thông tin từ rooms.
+  const fetchCameras = useCallback(async () => {
+    try {
+      const cams = await camerasApi.list();
+      const raw = getRawRooms();
+      const mapped: CameraData[] = cams.map((c) => {
+        const room = raw.find((r) => r.id === c.room_id);
+        return {
+          id: c.id,
+          name: c.name,
+          roomId: c.room_id,
+          room: room?.name ?? "",
+          className: room?.class_name ?? "",
+          students: room?.total_students ?? 0,
+          present: room?.present ?? 0,
+          absent: room?.absent ?? 0,
+          floor: room?.floor ?? "",
+          building: room?.building ?? "",
+          supervisor: room?.supervisor ?? "",
+          startTime: room?.startTime ?? "",
+          endTime: room?.endTime ?? "",
+          image: "",
+          video: c.video,
+          notes: c.note,
+        };
+      });
+      setCameraList(mapped);
+    } catch (err) {
+      console.error("Failed to load cameras", err);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchCameras();
+  }, [fetchCameras]);
+
+  /** Hiện overlay "Đang khởi tạo AI" 5s và emit video sang backend AI. */
+  const runAiInit = (videoName: string, camId: number) => {
+    setIsProcessing(true);
+    socketService.emitVideo(videoName, camId);
+    setTimeout(() => setIsProcessing(false), 5000);
+  };
 
   const selectedCamera = cameraList.find((c) => c.id === selectedCameraId) || null;
 

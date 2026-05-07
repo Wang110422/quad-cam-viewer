@@ -183,6 +183,7 @@ const Index = () => {
       // Phòng mất camera -> về "upcoming"
       if (cam) await setRoomStatus(cam.roomId, "upcoming");
       toast({ title: "Đã xóa camera" });
+      await fetchCameras();
     } catch (err) {
       console.error(err);
       toast({ title: "Không thể xóa camera" });

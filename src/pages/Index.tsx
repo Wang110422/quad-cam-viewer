@@ -114,15 +114,18 @@ const Index = () => {
       if (!payload) return;
       const newCam: CameraData = { ...payload, id: created.id };
 
-      setCameraList((prev) => [...prev, newCam]);
       setSelectedCameraId(created.id);
       setCreateDialogOpen(false);
       toast({ title: "Đã thêm camera", description: `${newCam.name} đã được thêm.` });
 
-      // Nghiệp vụ trạng thái phòng:
-      // - Phòng vừa gắn camera -> "live"
-      // - Nếu phòng đó đang "ended" thì coi như khởi động lại -> cũng "live"
+      // Nghiệp vụ trạng thái phòng: phòng có camera -> "live"
       await setRoomStatus(values.roomId, "live");
+
+      // Khởi tạo AI: emit video qua socket + hiển thị overlay 5s
+      runAiInit(values.videoFile?.name ?? newCam.name, created.id);
+
+      // Refresh dữ liệu sau khi thêm
+      await fetchCameras();
     } catch (err) {
       console.error(err);
       toast({ title: "Không thể tạo camera" });

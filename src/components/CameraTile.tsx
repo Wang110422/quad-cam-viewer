@@ -22,6 +22,13 @@ type AiResult = {
   conf?: number[];
 };
 
+// Payload backend gửi qua socket 'data_box': { cam_id, frame_idx, results }
+type DataBoxPayload = {
+  cam_id: number | string;
+  frame_idx: number;
+  results: AiResult[];
+};
+
 const CameraTile = ({
   camera,
   size = "small",
@@ -76,13 +83,14 @@ const CameraTile = ({
     }
   }, [isLoading]);
 
-  // Socket connect
+  // Socket connect — nhận event 'data_box' từ backend.
+  // Payload: { cam_id, frame_idx, results }. Lọc theo camera.id, key buffer là frame_idx.
   useEffect(() => {
     if (initiallyEnded) return;
     const socket = socketService.connect();
-    const handleDataBox = (data: { timestamp: string | number; results: AiResult[] }) => {
-      const ts = Number(parseFloat(String(data.timestamp)).toFixed(1));
-      aiResultsBuffer.current.set(ts, data.results);
+    const handleDataBox = (data: DataBoxPayload) => {
+      if (Number(data.cam_id) !== Number(camera.id)) return;
+      aiResultsBuffer.current.set(Number(data.frame_idx), data.results);
     };
     socket.on("data_box", handleDataBox);
     return () => {
@@ -191,8 +199,9 @@ const CameraTile = ({
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    const currentTime = Number(video.currentTime.toFixed(1));
-    const results = aiResultsBuffer.current.get(currentTime);
+    // Lookup theo frame_idx (giả định 30fps – đồng bộ với backend gửi frame_idx).
+    const frameIdx = Math.floor(video.currentTime * 30);
+    const results = aiResultsBuffer.current.get(frameIdx);
     if (!results || !Array.isArray(results)) return;
 
     // Master ghi nhận từng frame cho phát hiện vi phạm liên tục >5s

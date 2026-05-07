@@ -57,10 +57,14 @@ const Index = () => {
     fetchCameras();
   }, [fetchCameras]);
 
-  /** Hiện overlay "Đang khởi tạo AI" 5s và emit video sang backend AI. */
+  /**
+   * Hiện overlay "Đang khởi tạo AI" 5s và gọi BE để forward video sang Colab.
+   * BACKEND CALL: POST {VITE_BACKEND_HTTP_URL}/api/send-video
+   * Body: { video_name, cam_id }
+   */
   const runAiInit = (videoName: string, camId: number) => {
     setIsProcessing(true);
-    socketService.emitVideo(videoName, camId);
+    socketService.sendVideo(videoName, camId);
     setTimeout(() => setIsProcessing(false), 5000);
   };
 

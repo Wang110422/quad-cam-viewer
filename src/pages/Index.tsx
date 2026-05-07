@@ -22,6 +22,7 @@ const Index = () => {
   const [isProcessing, setIsProcessing] = useState(false);
 
   // BACKEND CALL: GET /cameras — load + ghép thông tin từ rooms.
+  // Sau khi load: camera nào KHÔNG có video → đẩy phòng tương ứng về "ended".
   const fetchCameras = useCallback(async () => {
     try {
       const cams = await camerasApi.list();
@@ -48,6 +49,16 @@ const Index = () => {
         };
       });
       setCameraList(mapped);
+
+      // Camera không có video → phòng về "ended" (BACKEND CALL: PATCH /rooms/:id { status:"ended" })
+      for (const c of cams) {
+        if (!c.video || c.video.trim() === "") {
+          const room = raw.find((r) => r.id === c.room_id);
+          if (room && room.status !== "ended") {
+            await setRoomStatus(c.room_id, "ended");
+          }
+        }
+      }
     } catch (err) {
       console.error("Failed to load cameras", err);
     }
@@ -57,10 +68,14 @@ const Index = () => {
     fetchCameras();
   }, [fetchCameras]);
 
-  /** Hiện overlay "Đang khởi tạo AI" 5s và emit video sang backend AI. */
+  /**
+   * Hiện overlay "Đang khởi tạo AI" 5s và gọi BE để forward video sang Colab.
+   * BACKEND CALL: POST {VITE_BACKEND_HTTP_URL}/api/send-video
+   * Body: { video_name, cam_id }
+   */
   const runAiInit = (videoName: string, camId: number) => {
     setIsProcessing(true);
-    socketService.emitVideo(videoName, camId);
+    socketService.sendVideo(videoName, camId);
     setTimeout(() => setIsProcessing(false), 5000);
   };
 

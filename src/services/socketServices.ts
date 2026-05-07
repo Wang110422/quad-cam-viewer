@@ -1,7 +1,10 @@
 import { io, Socket } from "socket.io-client";
+import axios from "axios";
 
 // URL backend AI – có thể đổi qua biến môi trường VITE_SOCKET_URL
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:5000";
+// URL HTTP của backend (dùng cho /api/send-video). Mặc định trùng SOCKET_URL.
+const HTTP_URL = import.meta.env.VITE_BACKEND_HTTP_URL || SOCKET_URL;
 
 class SocketService {
   private socket: Socket | null = null;
@@ -56,15 +59,18 @@ class SocketService {
     }
   }
 
-  /** Báo backend bắt đầu xử lý video cho camera vừa thêm/sửa. */
-  emitVideo(video_name: string, cam_id: number) {
-    // Đảm bảo có socket trước khi emit (trường hợp gọi trước khi tile mount)
-    if (!this.socket || this.socket.disconnected) {
-      this.connect();
+  /**
+   * Báo backend bắt đầu xử lý video cho camera vừa thêm/sửa.
+   * BACKEND CALL: POST {HTTP_URL}/api/send-video
+   * Body: { video_name: string, cam_id: number }
+   * (Backend sẽ forward sang Colab qua socketio nội bộ.)
+   */
+  async sendVideo(video_name: string, cam_id: number) {
+    try {
+      await axios.post(`${HTTP_URL}/api/send-video`, { video_name, cam_id });
+    } catch (err) {
+      console.error("[sendVideo] failed", err);
     }
-    const doEmit = () => this.socket?.emit("send_video", { video_name, camera_id: cam_id });
-    if (this.socket?.connected) doEmit();
-    else this.socket?.once("connect", doEmit);
   }
 }
 
